@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Image,
   ScrollView,
@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Crown, Building, Store, User } from '../components/Icons';
-import { MOCK_USERS, type MockUser, type Role } from '../data/mock';
+import { fetchUsers, type User as ApiUser } from '../services/api';
+import type { MockUser, Role } from '../data/mock';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../constants/theme';
 
 interface LoginScreenProps {
@@ -34,9 +35,20 @@ function RoleIcon({ role, color }: { role: Role; color: string }) {
 export function LoginScreen({ onLogin }: LoginScreenProps) {
   const insets = useSafeAreaInsets();
   const [selected, setSelected] = useState<string | null>(null);
+  const [users, setUsers] = useState<ApiUser[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchUsers().then((data) => {
+      if (active) setUsers(data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleLogin = () => {
-    const user = MOCK_USERS.find((u) => u.id === selected);
+    const user = users.find((u) => u.id === selected);
     if (user) onLogin(user);
   };
 
@@ -65,7 +77,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
         contentContainerStyle={styles.cardList}
         showsVerticalScrollIndicator={false}
       >
-        {MOCK_USERS.map((user) => {
+        {users.map((user) => {
           const isSelected = selected === user.id;
           const accent = ROLE_ACCENT[user.role];
           return (

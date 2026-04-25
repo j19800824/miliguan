@@ -1,4 +1,5 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KpiCard } from '../../components/KpiCard';
@@ -9,7 +10,13 @@ import {
   Package, Sparkle, Store, Users, Wallet,
 } from '../../components/Icons';
 import { Colors, FontSize, Gradients, Radius, Shadow, Spacing } from '../../constants/theme';
-import { MOCK_INVENTORY, MOCK_STORES, type MockUser } from '../../data/mock';
+import type { MockUser } from '../../data/mock';
+import {
+  fetchInventory,
+  fetchStores,
+  type InventoryItem,
+  type StoreItem,
+} from '../../services/api';
 
 interface BranchGMHomeScreenProps {
   user: MockUser;
@@ -30,6 +37,20 @@ const QUICK_ACTIONS: QuickAction[] = [
 
 export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
   const insets = useSafeAreaInsets();
+  const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [stores, setStores] = useState<StoreItem[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([fetchInventory(), fetchStores()]).then(([inv, st]) => {
+      if (!active) return;
+      setInventory(inv);
+      setStores(st);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <ScrollView
@@ -114,7 +135,7 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
 
       {/* Inventory */}
       <SectionHeader title="库存概览" action="查看详情" />
-      {MOCK_INVENTORY.map((inv) => (
+      {inventory.map((inv) => (
         <View
           key={inv.sku}
           style={[styles.invRow, inv.warn && styles.invRowWarn]}
@@ -141,7 +162,7 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
 
       {/* Stores */}
       <SectionHeader title="门店状态" action="管理门店" />
-      {MOCK_STORES.map((s) => (
+      {stores.map((s) => (
         <View key={s.id} style={styles.storeRow}>
           {/* Store SVG icon in semantic-colored container */}
           <View style={[

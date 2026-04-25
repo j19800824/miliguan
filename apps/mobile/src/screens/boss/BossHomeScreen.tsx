@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KpiCard } from '../../components/KpiCard';
 import { SectionHeader } from '../../components/SectionHeader';
 import { AlertDot, Bell, Check, Coin, Flame, Package, Sparkle } from '../../components/Icons';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme';
-import { MOCK_BRANCHES, MOCK_KPI, type MockUser } from '../../data/mock';
+import type { MockUser } from '../../data/mock';
+import {
+  fetchKpi,
+  fetchBranches,
+  type Kpi,
+  type Branch,
+} from '../../services/api';
 
 const PERIODS = ['日榜', '月榜', '年榜'] as const;
 type Period = typeof PERIODS[number];
@@ -19,6 +25,22 @@ interface BossHomeScreenProps {
 export function BossHomeScreen({ user }: BossHomeScreenProps) {
   const insets = useSafeAreaInsets();
   const [period, setPeriod] = useState<Period>('月榜');
+  const [kpi, setKpi] = useState<Kpi | null>(null);
+  const [branches, setBranches] = useState<Branch[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    Promise.all([fetchKpi(), fetchBranches()]).then(([k, b]) => {
+      if (!active) return;
+      setKpi(k);
+      setBranches(b);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!kpi) return null;
 
   return (
     <ScrollView
@@ -48,16 +70,16 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
         <KpiCard
           label="总销售额"
           labelIcon={<Coin size={12} color="rgba(255,255,255,0.85)" />}
-          value={`¥${MOCK_KPI.totalSales}`}
-          sub={MOCK_KPI.salesGrowth}
+          value={`¥${kpi.totalSales}`}
+          sub={kpi.salesGrowth}
           accent
           trend="up"
         />
         <KpiCard
           label="总核销量"
           labelIcon={<Check size={12} color={Colors.textSecondary} />}
-          value={MOCK_KPI.totalVerify}
-          sub={MOCK_KPI.verifyGrowth}
+          value={kpi.totalVerify}
+          sub={kpi.verifyGrowth}
           trend="up"
         />
       </View>
@@ -67,13 +89,13 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
         <KpiCard
           label="积分回调"
           labelIcon={<Sparkle size={12} color={Colors.goldDark} />}
-          value={MOCK_KPI.totalPoints}
+          value={kpi.totalPoints}
           gold
         />
         <KpiCard
           label="库存总量"
           labelIcon={<Package size={12} color={Colors.textSecondary} />}
-          value={MOCK_KPI.totalInventory}
+          value={kpi.totalInventory}
         />
       </View>
 
@@ -93,7 +115,7 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
 
       {/* Branch Ranking */}
       <SectionHeader title={`分公司 ${period}`} action="查看全部" />
-      {MOCK_BRANCHES.map((b) => {
+      {branches.map((b) => {
         const isTop3 = b.rank <= 3;
         const rankColor = isTop3 ? RANK_COLORS[b.rank - 1] : Colors.textSecondary;
         return (

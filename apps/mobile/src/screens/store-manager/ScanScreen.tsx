@@ -2,26 +2,25 @@ import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme';
+import { postVerifyScan, type VerifyScanResult } from '../../services/api';
 
 type ScanState = 'scanning' | 'success' | 'fail';
-
-const MOCK_PRODUCT = {
-  name: '低GI免煮米 2kg',
-  barcode: '6901234567890',
-  sku: 'MLG-2KG-001',
-  category: '主粮',
-  points: 60,
-};
 
 export function ScanScreen() {
   const insets = useSafeAreaInsets();
   const [state, setState] = useState<ScanState>('scanning');
+  const [result, setResult] = useState<VerifyScanResult | null>(null);
 
-  const handleMockScan = (success: boolean) => {
-    setState(success ? 'success' : 'fail');
+  const handleMockScan = async (success: boolean) => {
+    const res = await postVerifyScan({
+      barcode: success ? '6901234567890' : '0000000000000',
+    });
+    setResult(res);
+    setState(res.success ? 'success' : 'fail');
   };
 
   const handleReset = () => {
+    setResult(null);
     setState('scanning');
   };
 
@@ -62,10 +61,10 @@ export function ScanScreen() {
           </View>
           <View style={styles.resultInfo}>
             <Text style={styles.resultTitle}>核销成功</Text>
-            <Text style={styles.resultProduct}>{MOCK_PRODUCT.name}</Text>
+            <Text style={styles.resultProduct}>{result?.product?.name ?? '—'}</Text>
             <View style={styles.resultMeta}>
-              <Text style={styles.resultMetaItem}>SKU: {MOCK_PRODUCT.sku}</Text>
-              <Text style={styles.resultMetaItem}>回调积分: +{MOCK_PRODUCT.points}</Text>
+              <Text style={styles.resultMetaItem}>SKU: {result?.product?.sku ?? '—'}</Text>
+              <Text style={styles.resultMetaItem}>回调积分: +{result?.product?.points ?? 0}</Text>
             </View>
           </View>
           <TouchableOpacity style={styles.continueBtn} onPress={handleReset} activeOpacity={0.8}>

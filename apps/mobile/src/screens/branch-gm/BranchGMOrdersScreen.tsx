@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme';
-import { MOCK_ORDERS } from '../../data/mock';
+import { fetchOrders, type Order } from '../../services/api';
 
 const TABS = ['全部', '待确认', '已完成'] as const;
 type Tab = typeof TABS[number];
@@ -16,8 +16,19 @@ const STATUS_COLOR: Record<string, string> = {
 export function BranchGMOrdersScreen() {
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('全部');
+  const [orders, setOrders] = useState<Order[]>([]);
 
-  const filtered = tab === '全部' ? MOCK_ORDERS : MOCK_ORDERS.filter((o) => o.status === tab);
+  useEffect(() => {
+    let active = true;
+    fetchOrders().then((data) => {
+      if (active) setOrders(data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const filtered = tab === '全部' ? orders : orders.filter((o) => o.status === tab);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>

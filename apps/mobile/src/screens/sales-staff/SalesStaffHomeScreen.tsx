@@ -1,10 +1,12 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SectionHeader } from '../../components/SectionHeader';
 import { Chevron, QR, Scan, Sparkle, Trophy } from '../../components/Icons';
 import { Colors, FontSize, Gradients, Radius, Shadow, Spacing } from '../../constants/theme';
-import { MOCK_VERIFY_RECORDS, type MockUser } from '../../data/mock';
+import type { MockUser } from '../../data/mock';
+import { fetchVerifyRecords, type VerifyRecord } from '../../services/api';
 
 interface SalesStaffHomeScreenProps {
   user: MockUser;
@@ -13,7 +15,19 @@ interface SalesStaffHomeScreenProps {
 
 export function SalesStaffHomeScreen({ user, onScan }: SalesStaffHomeScreenProps) {
   const insets = useSafeAreaInsets();
-  const myRecords = MOCK_VERIFY_RECORDS.filter(
+  const [records, setRecords] = useState<VerifyRecord[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchVerifyRecords().then((data) => {
+      if (active) setRecords(data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const myRecords = records.filter(
     (r) => r.staff === user.name || r.staff === '陈小丽',
   );
 

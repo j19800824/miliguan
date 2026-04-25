@@ -1,20 +1,39 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { RankingRow } from '../../components/RankingRow';
 import { Trophy } from '../../components/Icons';
 import { Colors, FontSize, Gradients, Radius, Spacing } from '../../constants/theme';
-import { MOCK_RANKING_DAILY } from '../../data/mock';
+import { fetchRanking, type RankingEntry } from '../../services/api';
 
 const PERIODS = ['日榜', '月榜', '年榜'] as const;
 type Period = typeof PERIODS[number];
 
+const PERIOD_TO_API: Record<Period, 'daily' | 'monthly'> = {
+  日榜: 'daily',
+  月榜: 'monthly',
+  年榜: 'monthly',
+};
+
 export function SalesStaffRankingScreen() {
   const insets = useSafeAreaInsets();
   const [period, setPeriod] = useState<Period>('日榜');
+  const [ranking, setRanking] = useState<RankingEntry[]>([]);
 
-  const me = MOCK_RANKING_DAILY.find((r) => r.isMe);
+  useEffect(() => {
+    let active = true;
+    fetchRanking(PERIOD_TO_API[period] === 'daily' ? 'daily' : 'monthly').then(
+      (data) => {
+        if (active) setRanking(data);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [period]);
+
+  const me = ranking.find((r) => r.isMe);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -70,7 +89,7 @@ export function SalesStaffRankingScreen() {
       </View>
 
       <FlatList
-        data={MOCK_RANKING_DAILY}
+        data={ranking}
         keyExtractor={(item) => String(item.rank)}
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}

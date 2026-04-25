@@ -1,10 +1,12 @@
 import { LinearGradient } from 'expo-linear-gradient';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SectionHeader } from '../../components/SectionHeader';
 import { Check, QR, Scan, Sparkle, X } from '../../components/Icons';
 import { Colors, FontSize, Gradients, Radius, Shadow, Spacing } from '../../constants/theme';
-import { MOCK_VERIFY_RECORDS, type MockUser } from '../../data/mock';
+import type { MockUser } from '../../data/mock';
+import { fetchVerifyRecords, type VerifyRecord } from '../../services/api';
 
 interface StoreManagerHomeScreenProps {
   user: MockUser;
@@ -13,6 +15,17 @@ interface StoreManagerHomeScreenProps {
 
 export function StoreManagerHomeScreen({ user, onScan }: StoreManagerHomeScreenProps) {
   const insets = useSafeAreaInsets();
+  const [records, setRecords] = useState<VerifyRecord[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    fetchVerifyRecords().then((data) => {
+      if (active) setRecords(data);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <ScrollView
@@ -87,7 +100,7 @@ export function StoreManagerHomeScreen({ user, onScan }: StoreManagerHomeScreenP
 
       {/* Recent Records */}
       <SectionHeader title="今日核销记录" action="查看全部" />
-      {MOCK_VERIFY_RECORDS.map((r) => (
+      {records.map((r) => (
         <View
           key={r.id}
           style={[styles.recordRow, r.status === 'fail' && styles.recordRowFail]}
