@@ -6,4 +6,7 @@ module.exports = {
   ],
   testMatch: ['**/__tests__/**/*.test.ts', '**/__tests__/**/*.test.tsx'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json'],
+  moduleNameMapper: {
+    '^@miliguan/api-client$': '<rootDir>/../../packages/api-client/src/index.ts',
+  },
 };
