@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
+import * as SplashScreen from 'expo-splash-screen';
+import { useFonts } from 'expo-font';
 import { LoginScreen } from './src/screens/LoginScreen';
 import { BossNavigator } from './src/navigation/BossNavigator';
 import { BranchGMNavigator } from './src/navigation/BranchGMNavigator';
@@ -9,8 +11,23 @@ import { StoreManagerNavigator } from './src/navigation/StoreManagerNavigator';
 import { SalesStaffNavigator } from './src/navigation/SalesStaffNavigator';
 import type { MockUser } from './src/data/mock';
 
+SplashScreen.preventAutoHideAsync();
+
 export default function App() {
   const [user, setUser] = useState<MockUser | null>(null);
+
+  // When HarmonyOS Sans SC / Alibaba PuHuiTi TTFs are dropped into assets/fonts/,
+  // register them here. Empty map resolves immediately so we use system fonts
+  // (PingFang SC on iOS, sans-serif on Android).
+  const [fontsLoaded] = useFonts({});
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) return null;
 
   const handleLogout = () => setUser(null);
 

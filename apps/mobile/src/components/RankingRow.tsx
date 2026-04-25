@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Trophy } from './Icons';
-import { Colors, FontSize, Radius, Shadow, Spacing } from '../constants/theme';
+import { Colors, FontSize, Radius, Shadow, Spacing, numericFont } from '../constants/theme';
 
 interface RankingRowProps {
   rank: number;
@@ -84,6 +84,7 @@ const styles = StyleSheet.create({
   rankNum: {
     fontSize: FontSize.sm,
     fontWeight: '700',
+    ...numericFont,
   },
   nameRow: {
     flexDirection: 'row',
@@ -127,6 +128,7 @@ const styles = StyleSheet.create({
     fontSize: FontSize.lg,
     fontWeight: '700',
     color: Colors.gold,
+    ...numericFont,
   },
   pointsMe: {
     color: Colors.primary,

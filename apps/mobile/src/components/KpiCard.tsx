@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ArrowDown, ArrowUp } from './Icons';
-import { Colors, FontSize, Radius, Shadow, Spacing } from '../constants/theme';
+import { Colors, FontSize, Radius, Shadow, Spacing, numericFont } from '../constants/theme';
 
 interface KpiCardProps {
   label: string;
@@ -88,6 +88,7 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: Colors.textPrimary,
     letterSpacing: -0.3,
+    ...numericFont,
   },
   valueOnAccent: {
     color: '#FFFFFF',
