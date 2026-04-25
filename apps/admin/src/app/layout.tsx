@@ -17,7 +17,14 @@ const META_THEME_COLORS = {
 
 export const metadata: Metadata = {
   title: '米粒冠后台管理系统',
-  description: '米粒冠一期后台管理端'
+  description: '米粒冠一期后台管理端',
+  icons: {
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png', type: 'image/png' }
+    ],
+    apple: [{ url: '/apple-icon.png', sizes: '180x180', type: 'image/png' }]
+  }
 };
 
 export const viewport: Viewport = {
@@ -32,20 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang='zh-CN' suppressHydrationWarning data-theme={themeToApply}>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                // Set meta theme color
-                if (localStorage.theme === 'dark' || ((!('theme' in localStorage) || localStorage.theme === 'system') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '${META_THEME_COLORS.dark}')
-                }
-              } catch (_) {}
-            `
-          }}
-        />
-      </head>
+      <head />
       <body
         className={cn(
           'bg-background overflow-x-hidden overscroll-none font-sans antialiased',

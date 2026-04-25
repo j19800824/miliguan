@@ -5,6 +5,8 @@
   "packageManager": "pnpm@10.15.0",
   "scripts": {
     "dev": "turbo dev",
+    "dev:mobile": "pnpm --filter mobile dev",
+    "dev:admin": "pnpm --filter @miliguan/admin dev",
     "build": "turbo build",
     "typecheck": "turbo typecheck",
     "clean": "turbo clean"

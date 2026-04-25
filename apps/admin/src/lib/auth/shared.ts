@@ -22,7 +22,30 @@ export type AdminSessionUser = {
   department: string;
   roleId: string;
   roleName: string;
+  roleScope: string;
+  dataScope: AdminDataScope;
+  companyId: string;
+  storeId: string;
   permissions: string[];
 };
+
+export type AdminDataScope = 'all' | 'company' | 'store';
+
+export function getAdminDataScope(user: Pick<AdminSessionUser, 'roleScope' | 'companyId' | 'storeId'> | null): AdminDataScope {
+  if (!user) return 'all';
+  const roleScope = user.roleScope || '';
+  if (!user.companyId || ['总部', '总公司', '平台', '系统'].includes(roleScope)) {
+    return 'all';
+  }
+  return user.storeId ? 'store' : 'company';
+}
+
+export function isHeadquartersUser(user: Pick<AdminSessionUser, 'roleScope' | 'companyId' | 'storeId'> | null) {
+  return getAdminDataScope(user) === 'all';
+}
+
+export function isBranchUser(user: Pick<AdminSessionUser, 'roleScope' | 'companyId' | 'storeId'> | null) {
+  return getAdminDataScope(user) === 'company';
+}
 
 export const ADMIN_IDLE_MAX_AGE = 60 * 60;

@@ -7,9 +7,18 @@ export const metadata = {
   title: '米粒冠后台 - 角色管理'
 };
 
-export default async function RolesPage() {
+export default async function RolesPage({
+  searchParams
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const user = await requirePermission(rolesConfig.viewPermission);
-  const rows = await listRoles();
+  const params = await searchParams;
+  const search = Array.isArray(params.search) ? params.search[0] : params.search ?? '';
+  const scope = Array.isArray(params.scope) ? params.scope[0] : params.scope ?? 'all';
+  const page = Number(Array.isArray(params.page) ? params.page[0] : params.page ?? '1');
+  const pageSize = Number(Array.isArray(params.pageSize) ? params.pageSize[0] : params.pageSize ?? '10');
+  const result = await listRoles({ search, scope, page, pageSize });
   const stats = await getRoleStats();
   const metrics = [
     { label: '角色总数', value: `${stats.total}`, hint: '当前已建立的角色模板' },
@@ -20,7 +29,12 @@ export default async function RolesPage() {
   return (
     <ManagementListPage
       config={rolesConfig}
-      rows={rows}
+      rows={result.rows}
+      total={result.total}
+      page={result.page}
+      pageSize={result.pageSize}
+      initialSearch={search}
+      initialFilter={scope}
       metrics={metrics}
       canWrite={hasPermission(user, rolesConfig.writePermission)}
       canGrant={hasPermission(user, 'roles:grant')}

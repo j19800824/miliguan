@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import PageContainer from '@/components/layout/page-container';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -22,13 +22,22 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import { readApiError, type FieldErrors } from '@/lib/form-errors';
 import type { ManagementConfig, MetricCard } from '../data/management-data';
+import { PaginationFooter } from './pagination-footer';
+import { StatusBadge } from './status-badge';
 
 type DataRow = Record<string, string | number | null | undefined> & { id: string };
 
+type PurchaseOrderItemDraft = {
+  sku_id: string;
+  quantity: string;
+};
+
 function formatCellValue(type: string | undefined, value: string | number | null | undefined) {
   if (type === 'badge') {
-    return <Badge variant='outline'>{String(value ?? '')}</Badge>;
+    return <StatusBadge status={value} />;
   }
 
   if (type === 'currency') {
@@ -80,91 +89,198 @@ function DisabledActionButton({
 
 export function ManagementListPage({
   config,
-  rows: initialRows,
+  rows,
+  total,
+  page,
+  pageSize,
+  initialSearch = '',
+  initialFilter = 'all',
   metrics,
   canWrite = true,
   canGrant = false,
   currentUserId,
+  extraPageHeaderAction,
   listDescription = '当前数据直接来自 PostgreSQL 数据库，可新增、编辑和删除。',
   dialogDescription = '保存后会直接写入本地数据库。'
 }: {
   config: ManagementConfig;
   rows: DataRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  initialSearch?: string;
+  initialFilter?: string;
   metrics: MetricCard[];
   canWrite?: boolean;
   canGrant?: boolean;
   currentUserId?: string;
+  extraPageHeaderAction?: React.ReactNode;
   listDescription?: string;
   dialogDescription?: string;
 }) {
   const router = useRouter();
-  const [rows, setRows] = useState(initialRows);
-  const [search, setSearch] = useState('');
-  const [filter, setFilter] = useState('all');
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [search, setSearch] = useState(initialSearch);
+  const [filter, setFilter] = useState(initialFilter);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [editingRow, setEditingRow] = useState<DataRow | null>(null);
   const [pendingDelete, setPendingDelete] = useState<DataRow | null>(null);
   const [formData, setFormData] = useState<Record<string, string | number>>(buildEmptyForm(config));
+  const [purchaseItems, setPurchaseItems] = useState<PurchaseOrderItemDraft[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  useEffect(() => {
-    setRows(initialRows);
-  }, [initialRows]);
-
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState('');
   useEffect(() => {
     setFormData(buildEmptyForm(config));
   }, [config]);
 
-  const filteredRows = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
+  useEffect(() => {
+    setSearch(initialSearch);
+  }, [initialSearch]);
 
-    return rows.filter((row) => {
-      const matchKeyword =
-        keyword.length === 0 ||
-        Object.values(row).some((value) => String(value ?? '').toLowerCase().includes(keyword));
+  useEffect(() => {
+    setFilter(initialFilter);
+  }, [initialFilter]);
 
-      const filterValue = String(row[config.filterKey] ?? '');
-      const matchFilter = filter === 'all' || filterValue === filter;
+  const filterParamName =
+    config.entity === 'staff'
+      ? 'role'
+      : config.entity === 'roles'
+        ? 'scope'
+        : config.entity === 'permissions'
+          ? 'level'
+          : 'status';
 
-      return matchKeyword && matchFilter;
-    });
-  }, [config.filterKey, filter, rows, search]);
+  const updateQuery = (patch: Record<string, string | number | null>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(patch)) {
+      if (value === null || value === '' || value === 'all') {
+        params.delete(key);
+      } else {
+        params.set(key, String(value));
+      }
+    }
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (search !== initialSearch) {
+        updateQuery({ search, page: 1 });
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [search, initialSearch]);
+
+  useEffect(() => {
+    if (filter !== initialFilter) {
+      updateQuery({ [filterParamName]: filter, page: 1 });
+    }
+  }, [filter, initialFilter, filterParamName]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const openCreate = () => {
     setEditingRow(null);
     setFormData(buildEmptyForm(config));
+    setFieldErrors({});
+    setFormError('');
+    setPurchaseItems(
+      config.entity === 'purchase-orders'
+        ? [{ sku_id: config.purchaseSkuOptions?.[0]?.value ?? '', quantity: '1' }]
+        : []
+    );
     setIsDialogOpen(true);
   };
 
   const openEdit = (row: DataRow) => {
     setEditingRow(row);
+    setFieldErrors({});
+    setFormError('');
     const nextForm = Object.fromEntries(
       config.fields.map((field) => [field.name, String(row[field.name] ?? '')])
     );
     setFormData(nextForm);
+    setPurchaseItems([]);
     setIsDialogOpen(true);
   };
 
+  const selectedCompany = useMemo(
+    () => config.fields.find((field) => field.name === 'company_id')?.options?.find((option) => option.value === String(formData.company_id)),
+    [config.fields, formData.company_id]
+  );
+
+  const purchaseOrderQuotaTotal = useMemo(() => {
+    return purchaseItems.reduce((sum, item) => {
+      const sku = config.purchaseSkuOptions?.find((option) => option.value === item.sku_id);
+      return sum + Number(item.quantity || 0) * Number(sku?.orderQuotaPrice ?? 0);
+    }, 0);
+  }, [config.purchaseSkuOptions, purchaseItems]);
+
+  const selectedCompanyQuota = Number(selectedCompany?.availableOrderQuota ?? 0);
+  const purchaseQuotaInsufficient =
+    config.entity === 'purchase-orders' &&
+    Number.isFinite(selectedCompanyQuota) &&
+    purchaseOrderQuotaTotal > selectedCompanyQuota;
+
+  const formatQuota = (value: number) =>
+    new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 0 }).format(Number(value || 0));
+
   const submitForm = async () => {
+    const nextErrors: FieldErrors = {};
+    for (const field of config.fields) {
+      if (field.required && String(formData[field.name] ?? '').trim() === '') {
+        nextErrors[field.name] = `请填写${field.label}`;
+      }
+    }
+    if (config.entity === 'purchase-orders' && !editingRow) {
+      if (purchaseItems.length === 0) {
+        nextErrors.items = '请至少添加一个 SKU';
+      }
+      purchaseItems.forEach((item, index) => {
+        if (!item.sku_id) nextErrors[`items.${index}.sku_id`] = '请选择 SKU';
+        if (!Number.isInteger(Number(item.quantity)) || Number(item.quantity) <= 0) {
+          nextErrors[`items.${index}.quantity`] = '订货数量必须是大于 0 的整数';
+        }
+      });
+    }
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      const message = Object.values(nextErrors)[0] ?? '请检查表单字段';
+      setFormError(message);
+      toast.error(message);
+      return;
+    }
+
     setIsSubmitting(true);
+    setFieldErrors({});
+    setFormError('');
     const method = editingRow ? 'PUT' : 'POST';
     const url = editingRow
       ? `/api/admin/${config.entity}/${editingRow.id}`
       : `/api/admin/${config.entity}`;
+
+    const payload =
+      config.entity === 'purchase-orders' && !editingRow
+        ? { ...formData, items: purchaseItems }
+        : formData;
 
     const response = await fetch(url, {
       method,
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(formData)
+      body: JSON.stringify(payload)
     });
 
     setIsSubmitting(false);
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: '保存失败' }));
+      const error = await readApiError(response, '保存失败');
+      setFieldErrors(error.fieldErrors ?? {});
+      setFormError(error.message ?? '保存失败');
       toast.error(error.message ?? '保存失败');
       return;
     }
@@ -266,6 +382,7 @@ export function ManagementListPage({
       pageDescription={config.description}
       pageHeaderAction={
         <div className='flex items-center gap-2'>
+          {extraPageHeaderAction}
           <Button variant='outline' onClick={() => router.refresh()}>
             刷新
           </Button>
@@ -301,7 +418,7 @@ export function ManagementListPage({
                 <CardTitle>管理列表</CardTitle>
                 {listDescription ? <CardDescription>{listDescription}</CardDescription> : null}
               </div>
-              <Badge variant='outline'>共 {filteredRows.length} 条</Badge>
+              <Badge variant='outline'>共 {total} 条</Badge>
             </div>
             <div className='flex flex-col gap-3 md:flex-row'>
               <Input
@@ -338,14 +455,14 @@ export function ManagementListPage({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRows.length === 0 ? (
+                  {rows.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={config.columns.length + 1} className='text-muted-foreground py-10 text-center'>
                         暂无符合条件的数据
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredRows.map((row) => (
+                    rows.map((row) => (
                       <TableRow key={row.id}>
                         {config.columns.map((column) => (
                           <TableCell key={column.key} className={column.className}>
@@ -418,10 +535,15 @@ export function ManagementListPage({
                                 variant={row.status === '停用' ? 'outline' : 'destructive'}
                               />
                             ) : null}
-                            {canWrite && config.entity !== 'staff' ? (
+                            {canWrite && config.entity !== 'staff' && config.entity !== 'products' ? (
                               <Button variant='outline' size='sm' onClick={() => openEdit(row)}>
                                 编辑
                               </Button>
+                            ) : config.entity === 'products' ? (
+                              <DisabledActionButton
+                                label='编辑'
+                                reason='SPU 创建后基础信息不允许修改。'
+                              />
                             ) : config.entity !== 'staff' ? (
                               <DisabledActionButton
                                 label='编辑'
@@ -437,12 +559,12 @@ export function ManagementListPage({
                                   setIsDeleteOpen(true);
                                 }}
                               >
-                                删除
+                                提交删除申请
                               </Button>
                             ) : (
                               <DisabledActionButton
-                                label='删除'
-                                reason='当前账号没有编辑权限，无法删除这条记录。'
+                                label='提交删除申请'
+                                reason='当前账号没有编辑权限，无法提交删除申请。'
                                 variant='destructive'
                               />
                             )}
@@ -454,17 +576,143 @@ export function ManagementListPage({
                 </TableBody>
               </Table>
             </div>
+            <PaginationFooter
+              total={total}
+              page={page}
+              totalPages={totalPages}
+              pageSize={pageSize}
+              onPageChange={(nextPage) => updateQuery({ page: nextPage })}
+              onPageSizeChange={(nextPageSize) => updateQuery({ pageSize: nextPageSize, page: 1 })}
+            />
           </CardContent>
         </Card>
       </div>
 
       <Dialog open={isDialogOpen && canWrite} onOpenChange={setIsDialogOpen}>
-        <DialogContent className='max-h-[85vh] overflow-y-auto'>
+        <DialogContent
+          className={
+            config.entity === 'purchase-orders'
+              ? 'max-h-[88vh] w-[calc(100vw-2rem)] max-w-6xl overflow-y-auto overflow-x-hidden'
+              : 'max-h-[85vh] w-[calc(100vw-2rem)] max-w-2xl overflow-y-auto overflow-x-hidden'
+          }
+        >
           <DialogHeader>
             <DialogTitle>{editingRow ? `编辑${config.title}` : `新增${config.title}`}</DialogTitle>
             <DialogDescription>{dialogDescription}</DialogDescription>
           </DialogHeader>
           <div className='grid gap-4'>
+            {formError ? (
+              <div className='rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive'>
+                {formError}
+              </div>
+            ) : null}
+            {config.entity === 'purchase-orders' && !editingRow ? (
+              <div className='rounded-lg border p-4'>
+                <div className='mb-3 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between'>
+                  <div>
+                    <p className='font-medium'>订货 SKU 明细</p>
+                    <p className='text-muted-foreground text-sm'>后台只支持分公司向总公司订货，订货单号保存时自动生成。</p>
+                  </div>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={() =>
+                      setPurchaseItems((prev) => [
+                        ...prev,
+                        { sku_id: config.purchaseSkuOptions?.[0]?.value ?? '', quantity: '1' }
+                      ])
+                    }
+                  >
+                    添加 SKU
+                  </Button>
+                </div>
+                <div className='space-y-3'>
+                  {purchaseItems.map((item, index) => {
+                    const sku = config.purchaseSkuOptions?.find((option) => option.value === item.sku_id);
+                    const subtotal = Number(item.quantity || 0) * Number(sku?.orderQuotaPrice ?? 0);
+                    return (
+                      <div key={`${index}-${item.sku_id}`} className='rounded-lg border bg-background/60 p-3'>
+                        <div className='grid gap-3'>
+                          <div className='grid gap-2'>
+                            <Label>SKU</Label>
+                            <Select
+                              value={item.sku_id}
+                              onValueChange={(value) =>
+                                setPurchaseItems((prev) =>
+                                  prev.map((row, rowIndex) => rowIndex === index ? { ...row, sku_id: value } : row)
+                                )
+                              }
+                            >
+                              <SelectTrigger className={cn('w-full', fieldErrors[`items.${index}.sku_id`] && 'border-destructive ring-destructive/30')}>
+                                <SelectValue placeholder='请选择 SKU' />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {config.purchaseSkuOptions?.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            {fieldErrors[`items.${index}.sku_id`] ? (
+                              <p className='text-xs text-destructive'>{fieldErrors[`items.${index}.sku_id`]}</p>
+                            ) : null}
+                          </div>
+                          <div className='grid gap-3 sm:grid-cols-[160px_1fr_auto] sm:items-end'>
+                            <div className='grid gap-2'>
+                              <Label>订货数量</Label>
+                              <Input
+                                type='number'
+                                min='1'
+                                value={item.quantity}
+                                className={cn(fieldErrors[`items.${index}.quantity`] && 'border-destructive ring-destructive/30')}
+                                onChange={(event) =>
+                                  setPurchaseItems((prev) =>
+                                    prev.map((row, rowIndex) => rowIndex === index ? { ...row, quantity: event.target.value } : row)
+                                  )
+                                }
+                              />
+                              {fieldErrors[`items.${index}.quantity`] ? (
+                                <p className='text-xs text-destructive'>{fieldErrors[`items.${index}.quantity`]}</p>
+                              ) : null}
+                            </div>
+                            <div className='grid gap-2'>
+                              <Label>消耗订货额</Label>
+                              <div className='rounded-md border bg-muted/30 px-3 py-2 text-sm font-medium'>
+                                {formatQuota(subtotal)}
+                              </div>
+                            </div>
+                            <Button
+                              type='button'
+                              variant='outline'
+                              className='w-full sm:w-auto'
+                              disabled={purchaseItems.length <= 1}
+                              onClick={() => setPurchaseItems((prev) => prev.filter((_, rowIndex) => rowIndex !== index))}
+                            >
+                              删除
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className='mt-4 grid gap-2 rounded-md bg-muted/40 p-3 text-sm md:grid-cols-3'>
+                  <div>
+                    <span className='text-muted-foreground'>分公司剩余额度：</span>
+                    <strong>{formatQuota(selectedCompanyQuota)}</strong>
+                  </div>
+                  <div>
+                    <span className='text-muted-foreground'>本单消耗额度：</span>
+                    <strong>{formatQuota(purchaseOrderQuotaTotal)}</strong>
+                  </div>
+                  <div className={purchaseQuotaInsufficient ? 'text-destructive' : 'text-muted-foreground'}>
+                    {purchaseQuotaInsufficient ? '额度不足，提交后会进入待审核。' : '额度充足，可自动通过。'}
+                  </div>
+                </div>
+              </div>
+            ) : null}
             {config.fields.map((field) => (
               <div key={field.name} className='grid gap-2'>
                 <Label htmlFor={field.name}>{field.label}</Label>
@@ -472,18 +720,31 @@ export function ManagementListPage({
                   <Textarea
                     id={field.name}
                     value={String(formData[field.name] ?? '')}
+                    className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}
                     onChange={(event) =>
-                      setFormData((prev) => ({ ...prev, [field.name]: event.target.value }))
+                      setFormData((prev) => {
+                        setFieldErrors((errors) => {
+                          const { [field.name]: _ignored, ...rest } = errors;
+                          return rest;
+                        });
+                        return { ...prev, [field.name]: event.target.value };
+                      })
                     }
                   />
                 ) : field.type === 'select' ? (
                   <Select
                     value={String(formData[field.name] ?? '')}
                     onValueChange={(value) =>
-                      setFormData((prev) => ({ ...prev, [field.name]: value }))
+                      setFormData((prev) => {
+                        setFieldErrors((errors) => {
+                          const { [field.name]: _ignored, ...rest } = errors;
+                          return rest;
+                        });
+                        return { ...prev, [field.name]: value };
+                      })
                     }
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}>
                       <SelectValue placeholder={`请选择${field.label}`} />
                     </SelectTrigger>
                     <SelectContent>
@@ -499,11 +760,21 @@ export function ManagementListPage({
                     id={field.name}
                     type={field.type}
                     value={String(formData[field.name] ?? '')}
+                    className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}
                     onChange={(event) =>
-                      setFormData((prev) => ({ ...prev, [field.name]: event.target.value }))
+                      setFormData((prev) => {
+                        setFieldErrors((errors) => {
+                          const { [field.name]: _ignored, ...rest } = errors;
+                          return rest;
+                        });
+                        return { ...prev, [field.name]: event.target.value };
+                      })
                     }
                   />
                 )}
+                {fieldErrors[field.name] ? (
+                  <p className='text-xs text-destructive'>{fieldErrors[field.name]}</p>
+                ) : null}
               </div>
             ))}
           </div>
@@ -521,15 +792,15 @@ export function ManagementListPage({
       <AlertDialog open={isDeleteOpen && canWrite} onOpenChange={setIsDeleteOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>确认删除</AlertDialogTitle>
+            <AlertDialogTitle>确认提交删除申请</AlertDialogTitle>
             <AlertDialogDescription>
-              删除后将无法恢复，这条记录会从本地数据库中移除。
+              提交后需要审核通过，这条记录才会被标记为已删除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} disabled={isSubmitting}>
-              {isSubmitting ? '删除中...' : '确认删除'}
+              {isSubmitting ? '提交中...' : '确认提交'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

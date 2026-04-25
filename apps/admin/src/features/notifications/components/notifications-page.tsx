@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Icons } from '@/components/icons';
 import PageContainer from '@/components/layout/page-container';
 import { Button } from '@/components/ui/button';
@@ -8,18 +9,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useRouter } from 'next/navigation';
 import { useNotificationStore } from '../utils/store';
 
-const actionRoutes: Record<string, string> = {
-  view: '/dashboard/stores',
-  'view-order': '/dashboard/orders',
-  'view-member': '/dashboard/members',
-  open: '/dashboard/kanban',
-  'view-report': '/dashboard/reports'
-};
-
 export default function NotificationsPage() {
-  const { notifications, markAsRead, markAllAsRead, unreadCount } = useNotificationStore();
+  const { notifications, loadNotifications, markAsRead, markAllAsRead, unreadCount } = useNotificationStore();
   const router = useRouter();
   const count = unreadCount();
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
 
   const unreadNotifications = notifications.filter((n) => n.status === 'unread');
   const readNotifications = notifications.filter((n) => n.status === 'read');
@@ -47,9 +44,9 @@ export default function NotificationsPage() {
             actions={notification.actions}
             onMarkAsRead={markAsRead}
             onAction={(notifId, actionId) => {
-              const route = actionRoutes[actionId];
+              const route = notification.actions?.find((action) => action.id === actionId)?.url;
               if (route) {
-                markAsRead(notifId);
+                void markAsRead(notifId);
                 router.push(route);
               }
             }}

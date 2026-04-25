@@ -12,8 +12,8 @@ type TabItem = {
   path: string;
 };
 
-const STORAGE_KEY = 'miliguan-admin-tabs';
 const DEFAULT_TAB: TabItem = { title: '工作台', path: '/dashboard/overview' };
+const LEGACY_STORAGE_KEY = 'miliguan-admin-tabs';
 
 function resolveTabTitle(pathname: string) {
   const exactTitles: Record<string, string> = {
@@ -24,10 +24,12 @@ function resolveTabTitle(pathname: string) {
     '/dashboard/companies': '分公司管理',
     '/dashboard/inventory': '库存管理',
     '/dashboard/purchase-orders': '订货单管理',
-    '/dashboard/member-orders': '会员订单管理',
-    '/dashboard/redeem': '积分兑换',
+    '/dashboard/member-orders': '散客订单管理',
     '/dashboard/reports': '数据报表',
     '/dashboard/settings': '系统设置',
+    '/dashboard/order-quota-approvals': '订货额调整审核',
+    '/dashboard/inventory-approvals': '库存调整审核',
+    '/dashboard/delete-approvals': '删除审核',
     '/dashboard/roles': '角色管理',
     '/dashboard/permissions': '权限管理',
     '/dashboard/staff': '后台员工',
@@ -50,7 +52,7 @@ function resolveTabTitle(pathname: string) {
     [/^\/dashboard\/products\/([^/]+)$/, '商品详情'],
     [/^\/dashboard\/companies\/([^/]+)$/, '分公司详情'],
     [/^\/dashboard\/purchase-orders\/([^/]+)$/, '订货单详情'],
-    [/^\/dashboard\/member-orders\/([^/]+)$/, '会员订单详情'],
+    [/^\/dashboard\/member-orders\/([^/]+)$/, '散客订单详情'],
     [/^\/dashboard\/roles\/([^/]+)$/, '角色授权'],
     [/^\/dashboard\/staff\/([^/]+)$/, '员工详情']
   ];
@@ -68,20 +70,13 @@ function resolveTabTitle(pathname: string) {
 export function TabNavigation() {
   const pathname = usePathname();
   const router = useRouter();
-  const [tabs, setTabs] = useState<TabItem[]>([DEFAULT_TAB]);
+  const initialTab = pathname.startsWith('/dashboard')
+    ? { path: pathname, title: resolveTabTitle(pathname) }
+    : DEFAULT_TAB;
+  const [tabs, setTabs] = useState<TabItem[]>([initialTab]);
 
   useEffect(() => {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-
-    try {
-      const parsed = JSON.parse(raw) as TabItem[];
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setTabs(parsed);
-      }
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    }
+    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
   }, []);
 
   useEffect(() => {
@@ -93,7 +88,6 @@ export function TabNavigation() {
       const nextTabs = currentTabs.some((tab) => tab.path === pathname)
         ? currentTabs
         : currentTabs.concat({ path: pathname, title: resolveTabTitle(pathname) });
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextTabs));
       return nextTabs;
     });
   }, [pathname]);
@@ -112,7 +106,6 @@ export function TabNavigation() {
     }
 
     const nextTabs = visibleTabs.filter((tab) => tab.path !== path);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextTabs));
     setTabs(nextTabs);
 
     if (pathname === path) {

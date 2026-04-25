@@ -5,6 +5,7 @@ import {
   replaceRolePermissions
 } from '@/lib/database.js';
 import { getAdminSession, hasPermission } from '@/lib/auth/server';
+import { auditRoute } from '@/lib/audit';
 
 async function authorize() {
   const user = await getAdminSession();
@@ -21,21 +22,29 @@ async function authorize() {
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authError = await authorize();
-  if (authError) return authError;
-  const { id } = await context.params;
-  const role = await getRoleDetail(id);
+  const user = await getAdminSession();
+  return auditRoute(request, {
+    module: 'roles',
+    action: '查询角色权限',
+    operator: user,
+    handler: async () => {
+      const authError = await authorize();
+      if (authError) return authError;
+      const { id } = await context.params;
+      const role = await getRoleDetail(id);
 
-  if (!role) {
-    return NextResponse.json({ message: '角色不存在' }, { status: 404 });
-  }
+      if (!role) {
+        return NextResponse.json({ message: '角色不存在' }, { status: 404 });
+      }
 
-  return NextResponse.json({
-    role,
-    permissions: await getRolePermissionMatrix(id)
+      return NextResponse.json({
+        role,
+        permissions: await getRolePermissionMatrix(id)
+      });
+    }
   });
 }
 
@@ -43,16 +52,24 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authError = await authorize();
-  if (authError) return authError;
-  const { id } = await context.params;
+  const user = await getAdminSession();
+  return auditRoute(request, {
+    module: 'roles',
+    action: '更新角色权限',
+    operator: user,
+    handler: async () => {
+      const authError = await authorize();
+      if (authError) return authError;
+      const { id } = await context.params;
 
-  try {
-    const body = (await request.json()) as { permissionIds?: string[] };
-    await replaceRolePermissions(id, body.permissionIds ?? []);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '保存角色权限失败';
-    return NextResponse.json({ message }, { status: 400 });
-  }
+      try {
+        const body = (await request.json()) as { permissionIds?: string[] };
+        await replaceRolePermissions(id, body.permissionIds ?? []);
+        return NextResponse.json({ success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '保存角色权限失败';
+        return NextResponse.json({ message }, { status: 400 });
+      }
+    }
+  });
 }

@@ -7,6 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { ClientPaginatedItems } from './client-paginated-items';
+import { StatusBadge } from './status-badge';
 
 type PermissionRow = {
   id: string;
@@ -31,19 +33,25 @@ export function RolePermissionEditor({
   permissions
 }: {
   role: RoleDetail;
-  permissions: PermissionRow[];
+  permissions: {
+    rows: PermissionRow[];
+    total: number;
+    page: number;
+    pageSize: number;
+    totalPages: number;
+  };
 }) {
   const [selectedIds, setSelectedIds] = useState<string[]>(
-    permissions.filter((item) => item.assigned).map((item) => item.id)
+    permissions.rows.filter((item) => item.assigned).map((item) => item.id)
   );
   const [isPending, startTransition] = useTransition();
   const groupedPermissions = useMemo(() => {
-    return permissions.reduce<Record<string, PermissionRow[]>>((accumulator, permission) => {
+    return permissions.rows.reduce<Record<string, PermissionRow[]>>((accumulator, permission) => {
       accumulator[permission.module] ??= [];
       accumulator[permission.module].push(permission);
       return accumulator;
     }, {});
-  }, [permissions]);
+  }, [permissions.rows]);
 
   const togglePermission = (permissionId: string, checked: boolean) => {
     setSelectedIds((prev) =>
@@ -101,7 +109,7 @@ export function RolePermissionEditor({
             </div>
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground'>状态</span>
-              <Badge variant='outline'>{role.status}</Badge>
+              <StatusBadge status={role.status} />
             </div>
             <div className='flex items-center justify-between'>
               <span className='text-muted-foreground'>已选权限</span>
@@ -117,31 +125,38 @@ export function RolePermissionEditor({
                 <CardTitle className='text-base'>{moduleName}</CardTitle>
                 <CardDescription>按页面、按钮、数据范围勾选角色能力。</CardDescription>
               </CardHeader>
-              <CardContent className='grid gap-3'>
-                {modulePermissions.map((permission) => {
-                  const checked = selectedIds.includes(permission.id);
-                  return (
-                    <label
-                      key={permission.id}
-                      className='flex cursor-pointer items-start gap-3 rounded-lg border p-3'
-                    >
-                      <Checkbox
-                        checked={checked}
-                        onCheckedChange={(value) =>
-                          togglePermission(permission.id, value === true)
-                        }
-                      />
-                      <div className='grid gap-1'>
-                        <div className='flex flex-wrap items-center gap-2'>
-                          <span className='font-medium'>{permission.permission_name}</span>
-                          <Badge variant='outline'>{permission.level}</Badge>
-                          <Badge variant='outline'>{permission.status}</Badge>
+              <CardContent>
+                <ClientPaginatedItems
+                  className='grid gap-3'
+                  emptyState={<div className='rounded-lg border p-3 text-sm text-muted-foreground'>暂无权限</div>}
+                  total={permissions.total}
+                  page={permissions.page}
+                  pageSize={permissions.pageSize}
+                  items={modulePermissions.map((permission) => {
+                    const checked = selectedIds.includes(permission.id);
+                    return (
+                      <label
+                        key={permission.id}
+                        className='flex cursor-pointer items-start gap-3 rounded-lg border p-3'
+                      >
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(value) =>
+                            togglePermission(permission.id, value === true)
+                          }
+                        />
+                        <div className='grid gap-1'>
+                          <div className='flex flex-wrap items-center gap-2'>
+                            <span className='font-medium'>{permission.permission_name}</span>
+                            <Badge variant='outline'>{permission.level}</Badge>
+                            <StatusBadge status={permission.status} />
+                          </div>
+                          <code className='text-muted-foreground text-xs'>{permission.code}</code>
                         </div>
-                        <code className='text-muted-foreground text-xs'>{permission.code}</code>
-                      </div>
-                    </label>
-                  );
-                })}
+                      </label>
+                    );
+                  })}
+                />
               </CardContent>
             </Card>
           ))}

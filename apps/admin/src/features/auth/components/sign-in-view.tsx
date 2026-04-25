@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { DEMO_CREDENTIALS, SECONDARY_CREDENTIALS } from '@/lib/auth/shared';
 import { cn } from '@/lib/utils';
 import { Metadata } from 'next';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useState, useTransition } from 'react';
 import { InteractiveGridPattern } from './interactive-grid';
@@ -67,18 +68,16 @@ export default function SignInViewPage() {
       <div className='relative hidden h-full flex-col p-10 lg:flex dark:border-r'>
         <div className='absolute inset-0 bg-sidebar' />
         <div className='text-sidebar-foreground relative z-20 flex items-center text-lg font-medium'>
-          <svg
-            xmlns='http://www.w3.org/2000/svg'
-            viewBox='0 0 24 24'
-            fill='none'
-            stroke='currentColor'
-            strokeWidth='2'
-            strokeLinecap='round'
-            strokeLinejoin='round'
-            className='mr-2 h-6 w-6'
-          >
-            <path d='M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3' />
-          </svg>
+          <span className='mr-3 flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-sm ring-1 ring-white/40'>
+            <Image
+              src='/logo.png'
+              alt='米粒冠 Logo'
+              width={40}
+              height={40}
+              className='h-full w-full object-contain'
+              priority
+            />
+          </span>
           米粒冠后台
         </div>
         <InteractiveGridPattern

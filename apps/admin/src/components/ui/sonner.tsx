@@ -18,6 +18,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
         } as React.CSSProperties
       }
       position='top-center'
+      duration={12000}
+      closeButton
+      visibleToasts={5}
       {...props}
     />
   );

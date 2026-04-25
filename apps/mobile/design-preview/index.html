@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>米粒冠 App 设计预览</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #E8520B;
+    --primary-dark: #C43F06;
+    --gold: #F5A827;
+    --bg: #FFF8F0;
+    --surface: #FFFFFF;
+    --text: #1A0A00;
+    --text2: #8B5A3A;
+    --text3: #C4956A;
+    --border: #F0E0D0;
+    --success: #22C55E;
+    --danger: #DC2626;
+    --warning: #F59E0B;
+  }
+  body { background: #1a1a2e; font-family: -apple-system, 'PingFang SC', sans-serif; min-height: 100vh; }
+
+  /* Top bar */
+  .top-bar {
+    background: linear-gradient(135deg, #E8520B, #C43F06);
+    padding: 16px 32px;
+    display: flex; align-items: center; gap: 16px;
+    box-shadow: 0 4px 20px rgba(232,82,11,0.4);
+  }
+  .logo { width: 36px; height: 36px; background: rgba(255,255,255,0.2); border-radius: 10px;
+    display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .brand { font-size: 20px; font-weight: 800; color: #fff; letter-spacing: 2px; }
+  .brand-sub { font-size: 12px; color: rgba(255,255,255,0.7); margin-top: 1px; }
+  .top-bar-right { margin-left: auto; display: flex; gap: 8px; }
+
+  /* Role tabs */
+  .role-tabs {
+    display: flex; gap: 8px; background: rgba(255,255,255,0.12);
+    border-radius: 20px; padding: 4px;
+  }
+  .role-tab {
+    padding: 6px 16px; border-radius: 16px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.7);
+    background: transparent; transition: all 0.2s;
+  }
+  .role-tab.active { background: #fff; color: var(--primary); }
+  .role-tab:hover:not(.active) { color: #fff; background: rgba(255,255,255,0.15); }
+
+  /* Main layout */
+  .main { display: flex; gap: 32px; padding: 32px; justify-content: center; flex-wrap: wrap; }
+
+  /* Phone frame */
+  .phone-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .phone-label {
+    color: rgba(255,255,255,0.5); font-size: 12px; font-weight: 600;
+    letter-spacing: 1px; text-transform: uppercase;
+  }
+  .phone {
+    width: 375px; height: 750px;
+    background: #111; border-radius: 44px;
+    box-shadow: 0 0 0 2px #333, 0 0 0 4px #222, 0 30px 60px rgba(0,0,0,0.6);
+    overflow: hidden; position: relative;
+    border: 2px solid #444;
+  }
+  .phone-notch {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 120px; height: 30px; background: #111; border-radius: 0 0 18px 18px; z-index: 10;
+  }
+  .phone-screen {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    overflow: hidden; position: relative;
+  }
+
+  /* Screen panels */
+  .screen { display: none; width: 100%; height: 100%; flex-direction: column; overflow: hidden; }
+  .screen.active { display: flex; }
+
+  /* Screen nav tabs */
+  .screen-tabs {
+    display: flex; gap: 6px; padding: 8px 12px 0;
+    background: var(--bg); flex-shrink: 0;
+  }
+  .screen-tab {
+    padding: 5px 12px; border-radius: 12px; border: none; cursor: pointer;
+    font-size: 11px; font-weight: 600; background: var(--border); color: var(--text2);
+    transition: all 0.15s;
+  }
+  .screen-tab.active { background: var(--primary); color: #fff; }
+
+  /* Status bar */
+  .status-bar {
+    height: 44px; background: var(--bg);
+    display: flex; align-items: flex-end; justify-content: space-between;
+    padding: 0 20px 6px; font-size: 12px; color: var(--text); font-weight: 600; flex-shrink: 0;
+  }
+
+  /* Scroll content */
+  .scroll-content { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .scroll-content::-webkit-scrollbar { display: none; }
+
+  /* Bottom tab bar */
+  .tab-bar {
+    height: 70px; background: var(--surface); border-top: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-around;
+    padding-bottom: 10px; flex-shrink: 0;
+  }
+  .tab-item { display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; }
+  .tab-icon { font-size: 22px; line-height: 1; }
+  .tab-text { font-size: 10px; color: var(--text3); font-weight: 600; }
+  .tab-item.active .tab-text { color: var(--primary); }
+
+  /* ── Components ── */
+  .greeting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .greeting { font-size: 18px; font-weight: 800; color: var(--text); }
+  .greeting-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  .badge { border-radius: 20px; padding: 5px 12px; font-size: 12px; font-weight: 700; }
+  .badge-primary { background: #FFF3EC; color: var(--primary); border: 1px solid var(--border); }
+  .badge-gold { background: var(--gold); color: var(--text); }
+  .badge-success { background: #DCFCE7; color: var(--success); }
+  .badge-danger { background: #FEE2E2; color: var(--danger); }
+
+  .kpi-row { display: flex; gap: 8px; }
+  .kpi-card {
+    flex: 1; background: var(--surface); border-radius: 12px; padding: 12px;
+    border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(232,82,11,0.06);
+  }
+  .kpi-card.accent { background: var(--primary); border-color: var(--primary-dark); }
+  .kpi-card.gold { background: var(--gold); border-color: #E09000; }
+  .kpi-label { font-size: 10px; color: var(--text2); margin-bottom: 3px; }
+  .kpi-card.accent .kpi-label, .kpi-card.gold .kpi-label { color: rgba(255,255,255,0.8); }
+  .kpi-value { font-size: 18px; font-weight: 800; color: var(--text); }
+  .kpi-card.accent .kpi-value { color: #fff; }
+  .kpi-sub { font-size: 10px; color: var(--success); font-weight: 700; margin-top: 2px; }
+  .kpi-card.accent .kpi-sub { color: rgba(255,255,255,0.85); }
+
+  .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .section-title { display: flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 700; color: var(--text); }
+  .section-bar { width: 3px; height: 14px; background: var(--primary); border-radius: 2px; }
+  .section-action { font-size: 12px; color: var(--primary); font-weight: 600; }
+
+  .card { background: var(--surface); border-radius: 12px; padding: 12px; border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(232,82,11,0.05); }
+  .card-row { display: flex; align-items: center; gap: 10px; }
+
+  .branch-card { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: 10px; padding: 10px 12px; border: 1px solid var(--border); margin-bottom: 6px; }
+  .branch-rank { width: 28px; height: 28px; border-radius: 50%; background: var(--bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: var(--primary); flex-shrink: 0; }
+  .branch-name { font-size: 13px; font-weight: 700; color: var(--text); }
+  .branch-meta { font-size: 10px; color: var(--text2); margin-top: 2px; }
+  .branch-sales { margin-left: auto; text-align: right; }
+  .branch-sales-val { font-size: 13px; font-weight: 800; color: var(--text); }
+  .trend-up { color: var(--success); font-size: 10px; }
+  .trend-down { color: var(--danger); font-size: 10px; }
+
+  /* Points card */
+  .points-card {
+    background: var(--primary); border-radius: 16px; padding: 16px;
+    display: flex; align-items: center; gap: 12px;
+    box-shadow: 0 6px 20px rgba(232,82,11,0.3);
+  }
+  .points-card-left { flex: 1; }
+  .points-card-label { font-size: 11px; color: rgba(255,255,255,0.75); }
+  .points-card-value { font-size: 30px; font-weight: 900; color: #fff; margin: 3px 0; }
+  .points-card-sub { font-size: 10px; color: rgba(255,255,255,0.6); }
+  .order-btn { background: var(--gold); border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 800; color: var(--text); cursor: pointer; white-space: nowrap; }
+
+  /* Quick actions */
+  .quick-row { display: flex; justify-content: space-between; background: var(--surface); border-radius: 12px; padding: 12px; border: 1px solid var(--border); }
+  .quick-item { display: flex; flex-direction: column; align-items: center; gap: 5px; }
+  .quick-icon { width: 44px; height: 44px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+  .quick-label { font-size: 10px; color: var(--text2); font-weight: 600; }
+
+  /* Scan button */
+  .scan-btn {
+    background: var(--primary); border-radius: 20px; padding: 24px 20px;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    cursor: pointer; box-shadow: 0 8px 24px rgba(232,82,11,0.4);
+  }
+  .scan-icon { font-size: 48px; }
+  .scan-title { font-size: 22px; font-weight: 900; color: #fff; letter-spacing: 1px; }
+  .scan-sub { font-size: 12px; color: rgba(255,255,255,0.75); }
+
+  .staff-btn { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--surface); border-radius: 12px; padding: 12px; border: 1.5px solid var(--border); cursor: pointer; }
+  .staff-btn-text { font-size: 14px; font-weight: 600; color: var(--text2); }
+
+  /* Stats row */
+  .stats-row { display: flex; background: var(--surface); border-radius: 12px; border: 1px solid var(--border); overflow: hidden; }
+  .stat-cell { flex: 1; padding: 12px 8px; text-align: center; }
+  .stat-cell + .stat-cell { border-left: 1px solid var(--border); }
+  .stat-val { font-size: 22px; font-weight: 900; color: var(--primary); }
+  .stat-val.gold { color: var(--gold); }
+  .stat-label { font-size: 10px; color: var(--text2); margin-top: 3px; }
+
+  /* Record row */
+  .record-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: 10px; padding: 10px 12px; border: 1px solid var(--border); margin-bottom: 6px; }
+  .record-row.fail { border-color: var(--danger); background: #FFF8F8; }
+  .record-status { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; color: #fff; flex-shrink: 0; }
+  .rs-ok { background: var(--success); }
+  .rs-fail { background: var(--danger); }
+  .record-name { font-size: 13px; font-weight: 600; color: var(--text); }
+  .record-meta { font-size: 10px; color: var(--text3); margin-top: 1px; }
+
+  /* Ranking */
+  .my-rank-card { background: var(--primary); border-radius: 14px; padding: 14px 16px; }
+  .my-rank-label { font-size: 10px; color: rgba(255,255,255,0.65); margin-bottom: 6px; }
+  .my-rank-row { display: flex; align-items: center; gap: 10px; }
+  .my-rank-num { font-size: 32px; font-weight: 900; color: var(--gold); }
+  .my-rank-info { flex: 1; }
+  .my-rank-name { font-size: 15px; font-weight: 800; color: #fff; }
+  .my-rank-org { font-size: 10px; color: rgba(255,255,255,0.65); margin-top: 2px; }
+  .my-rank-pts { font-size: 18px; font-weight: 900; color: var(--gold); }
+
+  .rank-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: 10px; padding: 10px 12px; border: 1px solid var(--border); margin-bottom: 6px; }
+  .rank-row.me { background: #FFF3EC; border-color: var(--primary); border-width: 1.5px; }
+  .rank-pos { width: 32px; text-align: center; font-size: 20px; }
+  .rank-name { flex: 1; font-size: 13px; font-weight: 700; color: var(--text); }
+  .rank-name.me { color: var(--primary); }
+  .rank-org { font-size: 10px; color: var(--text3); margin-top: 1px; }
+  .rank-pts { font-size: 15px; font-weight: 800; color: var(--gold); }
+  .rank-unit { font-size: 10px; color: var(--text3); }
+
+  /* Period tabs */
+  .period-row { display: flex; background: var(--surface); border-radius: 10px; padding: 3px; border: 1px solid var(--border); }
+  .period-btn { flex: 1; padding: 6px; border-radius: 8px; text-align: center; font-size: 12px; font-weight: 700; color: var(--text2); cursor: pointer; }
+  .period-btn.active { background: var(--primary); color: #fff; }
+
+  /* Warn */
+  .warn-card { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 10px; padding: 10px 12px; border: 1.5px solid var(--danger); margin-bottom: 6px; }
+  .warn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--danger); flex-shrink: 0; }
+  .warn-text { font-size: 12px; color: var(--text); line-height: 1.4; }
+
+  /* Inventory */
+  .inv-row { display: flex; align-items: center; background: var(--surface); border-radius: 10px; padding: 10px 12px; border: 1px solid var(--border); margin-bottom: 6px; }
+  .inv-row.warn { border-color: var(--danger); }
+  .inv-name { flex: 1; font-size: 13px; font-weight: 600; color: var(--text); }
+  .inv-tag { font-size: 10px; color: var(--danger); background: #FEE2E2; border-radius: 5px; padding: 2px 6px; margin-left: 6px; font-weight: 700; }
+  .inv-stock { font-size: 14px; font-weight: 800; color: var(--text); }
+  .inv-stock.warn { color: var(--danger); }
+
+  /* Store row */
+  .store-row { display: flex; align-items: center; gap: 10px; background: var(--surface); border-radius: 10px; padding: 10px 12px; border: 1px solid var(--border); margin-bottom: 6px; }
+  .store-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--success); flex-shrink: 0; }
+  .store-dot.warn { background: var(--warning); }
+  .store-name { font-size: 13px; font-weight: 700; color: var(--text); }
+  .store-mgr { font-size: 10px; color: var(--text3); margin-top: 1px; }
+  .store-verify { margin-left: auto; font-size: 12px; color: var(--text2); font-weight: 600; }
+
+  /* Order card */
+  .order-card { background: var(--surface); border-radius: 12px; padding: 12px; border: 1px solid var(--border); margin-bottom: 8px; }
+  .order-hd { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .order-id { font-size: 10px; color: var(--text3); font-family: monospace; }
+  .order-body { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .order-sku { font-size: 13px; font-weight: 700; color: var(--text); }
+  .order-qty { font-size: 13px; color: var(--text2); }
+  .order-ft { display: flex; justify-content: space-between; padding-top: 8px; border-top: 1px solid var(--border); }
+  .order-date { font-size: 10px; color: var(--text3); }
+  .order-pts { font-size: 14px; font-weight: 900; color: var(--gold); }
+  .order-pts-label { font-size: 10px; color: var(--text2); }
+
+  /* Profile */
+  .profile-card { background: var(--surface); border-radius: 14px; padding: 14px; border: 1px solid var(--border); display: flex; align-items: center; gap: 12px; }
+  .profile-avatar { width: 56px; height: 56px; border-radius: 50%; background: var(--bg); border: 2.5px solid var(--primary); display: flex; align-items: center; justify-content: center; font-size: 26px; flex-shrink: 0; }
+  .profile-name { font-size: 18px; font-weight: 800; color: var(--text); }
+  .profile-role { display: inline-block; background: #FFF3EC; border-radius: 6px; padding: 2px 8px; font-size: 11px; color: var(--primary); font-weight: 700; margin: 4px 0; border: 1px solid var(--border); }
+  .profile-org { font-size: 11px; color: var(--text3); }
+  .profile-pts { margin-left: auto; text-align: right; }
+  .profile-pts-val { font-size: 18px; font-weight: 900; color: var(--gold); }
+  .profile-pts-label { font-size: 10px; color: var(--text3); }
+
+  .menu-card { background: var(--surface); border-radius: 14px; border: 1px solid var(--border); overflow: hidden; }
+  .menu-row { display: flex; align-items: center; gap: 12px; padding: 13px 14px; }
+  .menu-row + .menu-row { border-top: 1px solid var(--border); }
+  .menu-icon { font-size: 20px; }
+  .menu-label { flex: 1; font-size: 14px; color: var(--text); }
+  .menu-arrow { font-size: 18px; color: var(--text3); }
+
+  .logout-btn { border: 1.5px solid var(--danger); border-radius: 12px; padding: 12px; text-align: center; font-size: 14px; font-weight: 800; color: var(--danger); cursor: pointer; }
+
+  /* Login */
+  .login-header { padding: 16px 16px 10px; }
+  .login-logo-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .login-logo { width: 52px; height: 52px; background: var(--primary); border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 26px; box-shadow: 0 4px 12px rgba(232,82,11,0.3); }
+  .login-brand { font-size: 22px; font-weight: 900; color: var(--primary); letter-spacing: 1px; }
+  .login-slogan { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .login-welcome { font-size: 28px; font-weight: 900; color: var(--text); }
+  .login-sub { font-size: 13px; color: var(--text2); margin-top: 4px; }
+
+  .role-card { display: flex; align-items: center; gap: 12px; background: var(--surface); border-radius: 14px; padding: 14px; border: 1.5px solid var(--border); margin-bottom: 8px; cursor: pointer; }
+  .role-card.selected { border-color: var(--primary); background: #FFF3EC; }
+  .role-avatar { width: 48px; height: 48px; border-radius: 50%; background: var(--bg); display: flex; align-items: center; justify-content: center; font-size: 24px; flex-shrink: 0; }
+  .role-name { font-size: 15px; font-weight: 800; color: var(--text); }
+  .role-type { font-size: 12px; font-weight: 700; margin-top: 2px; }
+  .role-org { font-size: 10px; color: var(--text3); margin-top: 2px; }
+  .role-check { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 900; color: #fff; margin-left: auto; flex-shrink: 0; }
+
+  .login-btn { background: var(--primary); border-radius: 14px; padding: 14px; text-align: center; font-size: 16px; font-weight: 800; color: #fff; cursor: pointer; box-shadow: 0 6px 20px rgba(232,82,11,0.35); }
+  .login-hint { text-align: center; font-size: 11px; color: var(--text3); margin-top: 8px; }
+  .login-footer { padding: 10px 16px 16px; }
+
+  /* Scan screen */
+  .scan-screen-bg { background: #0D1117; flex: 1; display: flex; flex-direction: column; }
+  .scan-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; }
+  .scan-hd-title { font-size: 18px; font-weight: 800; color: #fff; }
+  .flash-btn { width: 36px; height: 36px; background: rgba(255,255,255,0.15); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16px; cursor: pointer; }
+  .viewfinder { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; }
+  .camera-area { width: 220px; height: 220px; background: rgba(255,255,255,0.04); border-radius: 12px; display: flex; align-items: center; justify-content: center; position: relative; }
+  .corner { position: absolute; width: 24px; height: 24px; border-color: var(--primary); border-style: solid; }
+  .c-tl { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+  .c-tr { top: -2px; right: -2px; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+  .c-bl { bottom: -2px; left: -2px; border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+  .c-br { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+  .scan-line { width: 180px; height: 2px; background: var(--primary); border-radius: 1px; opacity: 0.7; margin-top: 12px; }
+  .scan-hint { color: rgba(255,255,255,0.5); font-size: 12px; margin-top: 20px; }
+  .scan-result { margin: 12px 16px; background: var(--surface); border-radius: 16px; padding: 14px; border: 2px solid var(--success); display: flex; align-items: center; gap: 12px; }
+  .scan-result-icon { width: 44px; height: 44px; border-radius: 50%; background: var(--success); display: flex; align-items: center; justify-content: center; font-size: 20px; color: #fff; font-weight: 900; flex-shrink: 0; }
+  .scan-result-title { font-size: 13px; font-weight: 800; color: var(--success); }
+  .scan-result-product { font-size: 15px; font-weight: 700; color: var(--text); margin-top: 2px; }
+  .scan-result-pts { font-size: 11px; color: var(--text2); margin-top: 2px; }
+  .scan-continue { margin-left: auto; background: var(--primary); border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 800; color: #fff; cursor: pointer; white-space: nowrap; }
+  .scan-demo-row { display: flex; gap: 8px; padding: 8px 16px 12px; justify-content: center; flex-wrap: wrap; }
+  .scan-demo-hint { font-size: 10px; color: rgba(255,255,255,0.3); display: flex; align-items: center; }
+  .demo-btn { border-radius: 8px; padding: 7px 14px; font-size: 11px; font-weight: 700; cursor: pointer; border: 1px solid; }
+  .demo-ok { background: rgba(34,197,94,0.12); border-color: var(--success); color: var(--success); }
+  .demo-fail { background: rgba(220,38,38,0.1); border-color: var(--danger); color: var(--danger); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(232,82,11,0.2); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="logo">👑</div>
+  <div>
+    <div class="brand">米粒冠</div>
+    <div class="brand-sub">App 设计预览</div>
+  </div>
+  <div class="top-bar-right">
+    <div class="role-tabs" id="roleTabs">
+      <button class="role-tab active" onclick="switchRole('boss')">老板</button>
+      <button class="role-tab" onclick="switchRole('branch')">分公司总经理</button>
+      <button class="role-tab" onclick="switchRole('store')">门店店长</button>
+      <button class="role-tab" onclick="switchRole('staff')">销售店员</button>
+      <button class="role-tab" onclick="switchRole('login')">登录页</button>
+    </div>
+  </div>
+</div>
+
+<div class="main" id="mainArea">
+  <!-- Dynamic phones rendered by JS -->
+</div>
+
+<script>
+const ROLES = {
+  boss: {
+    label: '老板视角',
+    screens: [
+      { id: 'boss-home', label: '经营总览', tabs: ['📊 总览','🏆 排行','👤 我的'], activeTab: 0, content: bossHome },
+      { id: 'boss-rank', label: '积分排行', tabs: ['📊 总览','🏆 排行','👤 我的'], activeTab: 1, content: bossRank },
+      { id: 'boss-profile', label: '个人中心', tabs: ['📊 总览','🏆 排行','👤 我的'], activeTab: 2, content: profile('张总','老板','米粒冠总部','👑',null) },
+    ]
+  },
+  branch: {
+    label: '分公司总经理',
+    screens: [
+      { id: 'branch-home', label: '首页', tabs: ['🏠 首页','📋 订单','🏆 排行','👤 我的'], activeTab: 0, content: branchHome },
+      { id: 'branch-orders', label: '积分订单', tabs: ['🏠 首页','📋 订单','🏆 排行','👤 我的'], activeTab: 1, content: branchOrders },
+      { id: 'branch-profile', label: '个人中心', tabs: ['🏠 首页','📋 订单','🏆 排行','👤 我的'], activeTab: 3, content: profile('李经理','分公司总经理','华东分公司','🏢','128,500') },
+    ]
+  },
+  store: {
+    label: '门店店长',
+    screens: [
+      { id: 'store-home', label: '首页', tabs: ['🏪 首页','📷 扫码','🏆 排行','👤 我的'], activeTab: 0, content: storeHome },
+      { id: 'store-scan', label: '扫码核销', tabs: ['🏪 首页','📷 扫码','🏆 排行','👤 我的'], activeTab: 1, content: scanScreen },
+      { id: 'store-rank', label: '排行榜', tabs: ['🏪 首页','📷 扫码','🏆 排行','👤 我的'], activeTab: 2, content: rankScreen },
+    ]
+  },
+  staff: {
+    label: '销售店员',
+    screens: [
+      { id: 'staff-home', label: '首页', tabs: ['🛒 首页','📷 扫码','🏆 排行','👤 我的'], activeTab: 0, content: staffHome },
+      { id: 'staff-scan', label: '扫码核销', tabs: ['🛒 首页','📷 扫码','🏆 排行','👤 我的'], activeTab: 1, content: scanScreen },
+      { id: 'staff-rank', label: '排行榜', tabs: ['🛒 首页','📷 扫码','🏆 排行','👤 我的'], activeTab: 2, content: rankScreen },
+    ]
+  },
+  login: {
+    label: '登录页',
+    screens: [
+      { id: 'login-screen', label: '登录', tabs: [], activeTab: -1, content: loginScreen },
+    ]
+  }
+};
+
+function bossHome() {
+  return `
+    <div class="status-bar"><span>9:41</span><span>●●● 🔋</span></div>
+    <div class="scroll-content">
+      <div class="greeting-row">
+        <div><div class="greeting">你好，张总 👋</div><div class="greeting-sub">米粒冠总部</div></div>
+        <div class="badge badge-primary">经营总览</div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-card accent"><div class="kpi-label">总销售额</div><div class="kpi-value">¥128万</div><div class="kpi-sub">+12.4%</div></div>
+        <div class="kpi-card"><div class="kpi-label">总核销量</div><div class="kpi-value">38,420</div><div class="kpi-sub" style="color:var(--success)">+8.7%</div></div>
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-card gold"><div class="kpi-label">积分回调</div><div class="kpi-value">96,300</div></div>
+        <div class="kpi-card"><div class="kpi-label">库存总量</div><div class="kpi-value">12,840</div></div>
+      </div>
+      <div class="period-row">
+        <div class="period-btn">日榜</div>
+        <div class="period-btn active">月榜</div>
+        <div class="period-btn">年榜</div>
+      </div>
+      <div class="section-header"><div class="section-title"><div class="section-bar"></div>分公司月榜</div><div class="section-action">查看全部</div></div>
+      ${[['1','华东分公司','¥38.6万','核销 11,230 · 积分 34,800','up'],
+         ['2','华南分公司','¥31.2万','核销 9,640 · 积分 28,600','up'],
+         ['3','华北分公司','¥27.8万','核销 8,510 · 积分 24,300','down'],
+         ['4','西南分公司','¥19.8万','核销 6,080 · 积分 18,200','up']].map(([r,n,s,m,t])=>`
+        <div class="branch-card">
+          <div class="branch-rank">${r}</div>
+          <div style="flex:1"><div class="branch-name">${n}</div><div class="branch-meta">${m}</div></div>
+          <div class="branch-sales"><div class="branch-sales-val">${s}</div><div class="${t==='up'?'trend-up':'trend-down'}">${t==='up'?'▲ 上升':'▼ 下降'}</div></div>
+        </div>`).join('')}
+      <div class="section-header"><div class="section-title"><div class="section-bar"></div>库存预警</div></div>
+      <div class="warn-card"><div class="warn-dot"></div><div class="warn-text">华北分公司 · 低GI免煮米 2kg 库存仅剩 86 件</div></div>
+    </div>`;
+}
+
+function bossRank() {
+  return `
+    <div class="status-bar"><span>9:41</span><span>●●● 🔋</span></div>
+    <div class="scroll-content">
+      <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:10px">积分排行榜</div>
+      <div class="period-row" style="margin-bottom:10px">
+        <div class="period-btn active">日榜</div>
+        <div class="period-btn">月榜</div>
+        <div class="period-btn">年榜</div>
+      </div>
+      ${[['🥇','陈小丽','静安社区店','680',false],
+         ['🥈','刘明','虹桥社区店','590',false],
+         ['🥉','王店长','静安社区店','520',true],
+         ['4','张芳','徐汇社区店','480',false],
+         ['5','李强','杨浦社区店','420',false]].map(([r,n,o,p,me])=>`
+        <div class="rank-row ${me?'me':''}">
+          <div class="rank-pos">${r}</div>
+          <div style="flex:1"><div class="rank-name ${me?'me':''}">${n}</div><div class="rank-org">${o}</div></div>
+          <div style="text-align:right"><div class="rank-pts">${p}</div><div class="rank-unit">积分</div></div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function branchHome() {
+  return `
+    <div class="status-bar"><span>9:41</span><span>●●● 🔋</span></div>
+    <div class="scroll-content">
+      <div class="greeting-row">
+        <div><div class="greeting">你好，李经理</div><div class="greeting-sub">华东分公司</div></div>
+        <div class="badge" style="background:#FFF3EC;color:var(--primary);border:1px solid var(--border);font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">2 待审核</div>
+      </div>
+      <div class="points-card">
+        <div class="points-card-left">
+          <div class="points-card-label">可用积分余额</div>
+          <div class="points-card-value">128,500</div>
+          <div class="points-card-sub">本月消耗 23,500 · 回调 8,200</div>
+        </div>
+        <div class="order-btn">立即下单</div>
+      </div>
+      <div class="quick-row">
+        ${[['📦','积分下单'],['📊','库存查询'],['📋','订单跟踪'],['👥','门店管理']].map(([i,l])=>`
+          <div class="quick-item"><div class="quick-icon">${i}</div><div class="quick-label">${l}</div></div>`).join('')}
+      </div>
+      <div class="kpi-row">
+        <div class="kpi-card"><div class="kpi-label">本月核销量</div><div class="kpi-value">4,820</div><div class="kpi-sub">+11.2%</div></div>
+        <div class="kpi-card"><div class="kpi-label">本月销售额</div><div class="kpi-value">¥38.6万</div></div>
+      </div>
+      <div class="section-header"><div class="section-title"><div class="section-bar"></div>库存概览</div><div class="section-action">查看详情</div></div>
+      <div class="inv-row"><div class="inv-name">低GI免煮米 100g</div><div class="inv-stock">1,240 件</div></div>
+      <div class="inv-row warn"><div class="inv-name">低GI免煮米 2kg<span class="inv-tag">库存预警</span></div><div class="inv-stock warn">86 件</div></div>
+      <div class="inv-row"><div class="inv-name">低GI免煮米 2.5kg</div><div class="inv-stock">320 件</div></div>
+      <div class="section-header"><div class="section-title"><div class="section-bar"></div>门店状态</div><div class="section-action">管理门店</div></div>
+      <div class="store-row"><div class="store-dot"></div><div style="flex:1"><div class="store-name">静安社区店</div><div class="store-mgr">店长：王店长</div></div><div class="store-verify">核销 128</div></div>
+      <div class="store-row"><div class="store-dot"></div><div style="flex:1"><div class="store-name">虹桥社区店</div><div class="store-mgr">店长：刘明</div></div><div class="store-verify">核销 96</div></div>
+      <div class="store-row"><div class="store-dot warn"></div><div style="flex:1"><div class="store-name">徐汇社区店</div><div class="store-mgr">店长：张芳</div></div><div class="store-verify">核销 12</div></div>
+    </div>`;
+}
+
+function branchOrders() {
+  return `
+    <div class="status-bar"><span>9:41</span><span>●●● 🔋</span></div>
+    <div style="padding:12px 16px 0;font-size:18px;font-weight:800;color:var(--text);flex-shrink:0">积分订单</div>
+    <div style="display:flex;margin:10px 16px;background:var(--surface);border-radius:10px;padding:3px;border:1px solid var(--border);flex-shrink:0">
+      <div style="flex:1;padding:7px;border-radius:8px;text-align:center;font-size:12px;font-weight:700;background:var(--primary);color:#fff">全部</div>
+      <div style="flex:1;padding:7px;text-align:center;font-size:12px;font-weight:700;color:var(--text2)">待确认</div>
+      <div style="flex:1;padding:7px;text-align:center;font-size:12px;font-weight:700;color:var(--text2)">已完成</div>
+    </div>
+    <div class="scroll-content" style="padding-top:4px">
+      ${[['ORD20240401001','低GI免煮米 2kg','×200','12,000','已完成','04-01'],
+         ['ORD20240328002','低GI免煮米 100g×25','×50','8,500','待确认','03-28'],
+         ['ORD20240325003','低GI免煮米 2.5kg','×100','15,000','已完成','03-25']].map(([id,sku,qty,pts,status,date])=>`
+        <div class="order-card">
+          <div class="order-hd">
+            <span class="order-id">${id}</span>
+            <span class="badge" style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:${status==='已完成'?'rgba(34,197,94,0.12)':'rgba(245,158,11,0.12)'};color:${status==='已完成'?'var(--success)':'var(--warning)'}">${status}</span>
+          </div>
+          <div class="order-body"><span class="order-sku">${sku}</span><span class="order-qty">${qty}</span></div>
+          <div class="order-ft"><span class="order-date">${date}</span><div style="display:flex;align-items:center;gap:6px"><span class="order-pts-label">消耗积分</span><span class="order-pts">${pts}</span></div></div>
+        </div>`).join('')}
+    </div>
+    <div style="padding:10px 16px 16px;flex-shrink:0">
+      <div style="background:var(--primary);border-radius:14px;padding:14px;text-align:center;font-size:15px;font-weight:800;color:#fff;box-shadow:0 6px 20px rgba(232,82,11,0.3)">+ 新建积分订单</div>
+    </div>`;
+}
+
+function storeHome() {
+  return `
+    <div class="status-bar"><span>9:41</span><span>●●● 🔋</span></div>
+    <div class="scroll-content">
+      <div class="greeting-row">
+        <div><div class="greeting">王店长</div><div class="greeting-sub">静安社区店</div></div>
+        <div style="background:var(--gold);border-radius:12px;padding:8px 14px;text-align:center;box-shadow:0 2px 8px rgba(232,82,11,0.2)">
+          <div style="font-size:17px;font-weight:900;color:var(--text)">8,820</div>
+          <div style="font-size:10px;color:var(--text)">积分</div>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-cell"><div class="stat-val">38</div><div class="stat-label">今日核销</div></div>
+        <div class="stat-cell"><div class="stat-val">12</div><div class="stat-label">本人核销</div></div>
+        <div class="stat-cell"><div class="stat-val gold">520</div><div class="stat-label">今日积分</div></div>
+      </div>
+      <div class="scan-btn" style="margin:0">
+        <div class="scan-icon">📷</div>
+        <div class="scan-title">扫码核销</div>
+        <div class="scan-sub">扫描商品二维码完成核销</div>
+      </div>
+      <div class="staff-btn">
+        <span style="font-size:20px">🪪</span>
+        <span class="staff-btn-text">扫描员工一维码</span>
+      </div>
+      <div class="section-header"><div class="section-title"><div class="section-bar"></div>今日核销记录</div><div class="section-action">查看全部</div></div>
+      <div class="record-row"><div class="record-status rs-ok">✓</div><div style="flex:1"><div class="record-name">低GI免煮米 2kg</div><div class="record-meta">14:32 · 陈小丽</div></div><span style="font-size:10px;color:var(--text3);font-family:monospace">567890</span></div>
+      <div class="record-row"><div class="record-status rs-ok">✓</div><div style="flex:1"><div class="record-name">低GI免煮米 100g</div><div class="record-meta">13:15 · 王店长</div></div><span style="font-size:10px;color:var(--text3);font-family:monospace">567891</span></div>
+      <div class="record-row fail"><div class="record-status rs-fail">✗</div><div style="flex:1"><div class="record-name">未知商品</div><div class="record-meta">10:22 · 王店长</div></div><span style="font-size:10px;color:var(--danger);font-family:monospace">000000</span></div>
+    </div>`;
+}
+
+function scanScreen() {
+  return `
+    <div class="scan-screen-bg">
+      <div class="scan-header">
+        <div class="scan-hd-title">扫码核销</div>
+        <div class="flash-btn">⚡</div>
+      </div>
+      <div class="viewfinder">
+        <div class="camera-area">
+          <div class="corner c-tl"></div><div class="corner c-tr"></div>
+          <div class="corner c-bl"></div><div class="corner c-br"></div>
+          <div style="color:rgba(255,255,255,0.15);font-size:13px;text-align:center">📷<br/>相机取景区域</div>
+        </div>
+        <div class="scan-line"></div>
+        <div class="scan-hint">将商品二维码对准方框内扫描</div>
+      </div>
+      <div class="scan-result">
+        <div class="scan-result-icon">✓</div>
+        <div style="flex:1">
+          <div class="scan-result-title">核销成功</div>
+          <div class="scan-result-product">低GI免煮米 2kg</div>
+          <div class="scan-result-pts">SKU: MLG-2KG-001 · 回调积分 +60</div>
+        </div>
+        <div class="scan-continue">继续扫码</div>
+      </div>
+      <div class="scan-demo-row">
+        <span class="scan-demo-hint">演示：</span>
+        <div class="demo-btn demo-ok">✓ 模拟成功</div>
+        <div class="demo-btn demo-fail">✗ 模拟失败</div>
+      </div>
+    </div>`;
+}
+
+function rankScreen() {
+  return `
+    <div class="status-bar" style="background:var(--bg)"><span>9:41</span><span>●●● 🔋</span></div>
+    <div class="scroll-content">
+      <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:10px">积分排行榜</div>
+      <div class="my-rank-card" style="margin-bottom:10px">
+        <div class="my-rank-label">我的排名</div>
+        <div class="my-rank-row">
+          <div class="my-rank-num">#3</div>
+          <div class="my-rank-info"><div class="my-rank-name">王店长</div><div class="my-rank-org">静安社区店</div></div>
+          <div class="my-rank-pts">520 <span style="font-size:11px;color:rgba(255,255,255,0.7);font-weight:400">积分</span></div>
+        </div>
+      </div>
+      <div class="period-row" style="margin-bottom:10px">
+        <div class="period-btn active">日榜</div>
+        <div class="period-btn">月榜</div>
+        <div class="period-btn">年榜</div>
+      </div>
+      ${[['🥇','陈小丽','静安社区店','680',false],
+         ['🥈','刘明','虹桥社区店','590',false],
+         ['🥉','王店长','静安社区店','520',true],
+         ['4','张芳','徐汇社区店','480',false],
+         ['5','李强','杨浦社区店','420',false]].map(([r,n,o,p,me])=>`
+        <div class="rank-row ${me?'me':''}">
+          <div class="rank-pos">${r}</div>
+          <div style="flex:1"><div class="rank-name ${me?'me':''}">${n}</div><div class="rank-org">${o}</div></div>
+          <div style="text-align:right"><div class="rank-pts">${p}</div><div class="rank-unit">积分</div></div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function staffHome() {
+  return `
+    <div class="status-bar"><span>9:41</span><span>●●● 🔋</span></div>
+    <div class="scroll-content">
+      <div class="greeting-row">
+        <div><div class="greeting">你好，陈小丽</div><div class="greeting-sub">静安社区店</div></div>
+        <div style="background:var(--primary);border-radius:12px;padding:8px 14px;text-align:center;box-shadow:0 4px 12px rgba(232,82,11,0.3)">
+          <div style="font-size:17px;font-weight:900;color:#fff">#1</div>
+          <div style="font-size:10px;color:rgba(255,255,255,0.8)">今日排名</div>
+        </div>
+      </div>
+      <div style="display:flex;background:var(--surface);border-radius:14px;border:1px solid var(--border);overflow:hidden">
+        <div style="flex:1;background:var(--gold);padding:16px">
+          <div style="font-size:11px;color:rgba(26,10,0,0.6)">我的积分</div>
+          <div style="font-size:28px;font-weight:900;color:var(--text);margin-top:3px">3,260</div>
+        </div>
+        <div style="width:1px;background:var(--border)"></div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:space-around;padding:12px">
+          <div style="text-align:center"><div style="font-size:20px;font-weight:900;color:var(--primary)">12</div><div style="font-size:10px;color:var(--text2);margin-top:3px">今日核销</div></div>
+          <div style="text-align:center"><div style="font-size:20px;font-weight:900;color:var(--primary)">+240</div><div style="font-size:10px;color:var(--text2);margin-top:3px">今日积分</div></div>
+        </div>
+      </div>
+      <div style="background:var(--primary);border-radius:20px;padding:20px;display:flex;align-items:center;gap:12px;box-shadow:0 8px 24px rgba(232,82,11,0.35);cursor:pointer">
+        <span style="font-size:38px">📷</span>
+        <div style="flex:1"><div style="font-size:20px;font-weight:900;color:#fff">扫码核销</div><div style="font-size:12px;color:rgba(255,255,255,0.75);margin-top:2px">点击开始扫描商品</div></div>
+        <span style="font-size:24px;color:rgba(255,255,255,0.6)">›</span>
+      </div>
+      <div class="staff-btn"><span style="font-size:20px">🪪</span><span class="staff-btn-text">扫描一维码绑定销售记录</span></div>
+      <div class="section-header"><div class="section-title"><div class="section-bar"></div>我的核销记录</div><div class="section-action">全部记录</div></div>
+      <div class="record-row"><div style="width:8px;height:8px;border-radius:50%;background:var(--success);flex-shrink:0"></div><div style="flex:1"><div class="record-name">低GI免煮米 2kg</div><div class="record-meta">14:32</div></div><span style="font-size:12px;font-weight:600;color:var(--success)">核销成功</span></div>
+      <div class="record-row"><div style="width:8px;height:8px;border-radius:50%;background:var(--success);flex-shrink:0"></div><div style="flex:1"><div class="record-name">低GI免煮米 2.5kg</div><div class="record-meta">11:48</div></div><span style="font-size:12px;font-weight:600;color:var(--success)">核销成功</span></div>
+    </div>`;
+}
+
+function profile(name, role, org, avatar, points) {
+  return () => `
+    <div class="status-bar"><span>9:41</span><span>●●● 🔋</span></div>
+    <div class="scroll-content">
+      <div style="font-size:18px;font-weight:800;color:var(--text);margin-bottom:10px">个人中心</div>
+      <div class="profile-card">
+        <div class="profile-avatar">${avatar}</div>
+        <div style="flex:1"><div class="profile-name">${name}</div><div class="profile-role">${role}</div><div class="profile-org">${org}</div></div>
+        ${points?`<div class="profile-pts"><div class="profile-pts-val">${points}</div><div class="profile-pts-label">积分</div></div>`:''}
+      </div>
+      <div class="menu-card">
+        ${[['📋','操作记录'],['🔔','消息通知'],['🔐','账号安全'],['❓','帮助与反馈']].map(([i,l])=>`
+          <div class="menu-row"><span class="menu-icon">${i}</span><span class="menu-label">${l}</span><span class="menu-arrow">›</span></div>`).join('')}
+      </div>
+      <div style="margin-top:16px">
+        <div class="logout-btn">退出登录</div>
+        <div style="text-align:center;font-size:11px;color:var(--text3);margin-top:10px">米粒冠 v1.0.0 · 演示版本</div>
+      </div>
+    </div>`;
+}
+
+function loginScreen() {
+  return `
+    <div class="status-bar"><span>9:41</span><span>●●● 🔋</span></div>
+    <div class="login-header">
+      <div class="login-logo-row">
+        <div class="login-logo">👑</div>
+        <div><div class="login-brand">米粒冠</div><div class="login-slogan">选米做饭 · 认准米粒冠</div></div>
+      </div>
+      <div class="login-welcome">欢迎登录</div>
+      <div class="login-sub">选择您的身份快速进入系统</div>
+    </div>
+    <div style="padding:0 16px;flex:1;overflow-y:auto">
+      <div class="role-card selected">
+        <div class="role-avatar">👑</div>
+        <div style="flex:1"><div class="role-name">张总</div><div class="role-type" style="color:var(--primary)">老板</div><div class="role-org">米粒冠总部</div></div>
+        <div class="role-check" style="background:var(--primary)">✓</div>
+      </div>
+      <div class="role-card">
+        <div class="role-avatar" style="background:#FFF8E6">🏢</div>
+        <div style="flex:1"><div class="role-name">李经理</div><div class="role-type" style="color:var(--gold)">分公司总经理</div><div class="role-org">华东分公司</div></div>
+      </div>
+      <div class="role-card">
+        <div class="role-avatar" style="background:#F0FFF4">🏪</div>
+        <div style="flex:1"><div class="role-name">王店长</div><div class="role-type" style="color:var(--success)">门店店长</div><div class="role-org">静安社区店</div></div>
+      </div>
+      <div class="role-card">
+        <div class="role-avatar" style="background:#EFF6FF">🛒</div>
+        <div style="flex:1"><div class="role-name">陈小丽</div><div class="role-type" style="color:#3B82F6">销售店员</div><div class="role-org">静安社区店</div></div>
+      </div>
+    </div>
+    <div class="login-footer">
+      <div class="login-btn">进入系统</div>
+      <div class="login-hint">演示模式 · 选择角色直接登录</div>
+    </div>`;
+}
+
+let currentRole = 'boss';
+
+function switchRole(role) {
+  currentRole = role;
+  document.querySelectorAll('.role-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  renderPhones();
+}
+
+function renderPhones() {
+  const area = document.getElementById('mainArea');
+  const roleData = ROLES[currentRole];
+  area.innerHTML = roleData.screens.map(screen => {
+    const content = typeof screen.content === 'function' ? screen.content() : screen.content;
+    const isScan = screen.id.includes('scan');
+    return `
+      <div class="phone-wrap">
+        <div class="phone-label">${screen.label}</div>
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen" style="${isScan?'background:#0D1117':''}">
+            <div class="screen active" style="background:${isScan?'#0D1117':'var(--bg)'}">
+              ${content}
+              ${screen.tabs.length > 0 ? `
+              <div class="tab-bar">
+                ${screen.tabs.map((t,i)=>`
+                  <div class="tab-item ${i===screen.activeTab?'active':''}">
+                    <div class="tab-icon">${t.split(' ')[0]}</div>
+                    <div class="tab-text">${t.split(' ').slice(1).join(' ')}</div>
+                  </div>`).join('')}
+              </div>` : ''}
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+renderPhones();
+</script>
+</body>
+</html>

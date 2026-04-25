@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { deleteRecord, initializeDatabase, updateRecord } from '@/lib/database.js';
 import { getAdminSession, hasPermission } from '@/lib/auth/server';
+import { auditRoute } from '@/lib/audit';
+import { inferFieldErrors } from '@/lib/form-errors';
 
 const validResources = new Set([
   'stores',
@@ -49,24 +51,36 @@ export async function PUT(
   context: { params: Promise<{ resource: string; id: string }> }
 ) {
   initializeDatabase();
-  const { resource, id } = await context.params;
+  const authUser = await getAdminSession();
+  return auditRoute(request, {
+    module: 'admin-resource',
+    action: '更新资源',
+    operator: authUser,
+    handler: async () => {
+      const { resource, id } = await context.params;
 
-  if (!validResources.has(resource)) {
-    return NextResponse.json({ message: '不支持的资源类型' }, { status: 404 });
-  }
-  const resourceKey = resource as ResourceKey;
+      if (!validResources.has(resource)) {
+        return NextResponse.json({ message: '不支持的资源类型' }, { status: 404 });
+      }
+      const resourceKey = resource as ResourceKey;
 
-  const authResult = await authorize(resourcePermissions[resourceKey].write);
-  if (authResult instanceof NextResponse) return authResult;
+      const authResult = await authorize(resourcePermissions[resourceKey].write);
+      if (authResult instanceof NextResponse) return authResult;
 
-  try {
-    const payload = await request.json();
-    const result = await updateRecord(resource, id, payload, authResult.name ?? authResult.account ?? '后台用户');
-    return NextResponse.json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '更新失败，请检查提交内容';
-    return NextResponse.json({ message }, { status: 400 });
-  }
+      if (resource === 'products') {
+        return NextResponse.json({ message: 'SPU 创建后不允许修改基础信息' }, { status: 400 });
+      }
+
+      try {
+        const payload = await request.json();
+        const result = await updateRecord(resource, id, payload, authResult.name ?? authResult.account ?? '后台用户', authResult);
+        return NextResponse.json(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '更新失败，请检查提交内容';
+        return NextResponse.json({ message, fieldErrors: inferFieldErrors(message) }, { status: 400 });
+      }
+    }
+  });
 }
 
 export async function DELETE(
@@ -74,21 +88,29 @@ export async function DELETE(
   context: { params: Promise<{ resource: string; id: string }> }
 ) {
   initializeDatabase();
-  const { resource, id } = await context.params;
+  const authUser = await getAdminSession();
+  return auditRoute(_request, {
+    module: 'admin-resource',
+    action: '删除资源',
+    operator: authUser,
+    handler: async () => {
+      const { resource, id } = await context.params;
 
-  if (!validResources.has(resource)) {
-    return NextResponse.json({ message: '不支持的资源类型' }, { status: 404 });
-  }
-  const resourceKey = resource as ResourceKey;
+      if (!validResources.has(resource)) {
+        return NextResponse.json({ message: '不支持的资源类型' }, { status: 404 });
+      }
+      const resourceKey = resource as ResourceKey;
 
-  const authResult = await authorize(resourcePermissions[resourceKey].write);
-  if (authResult instanceof NextResponse) return authResult;
+      const authResult = await authorize(resourcePermissions[resourceKey].write);
+      if (authResult instanceof NextResponse) return authResult;
 
-  try {
-    const result = await deleteRecord(resource, id, authResult.name ?? authResult.account ?? '后台用户');
-    return NextResponse.json(result);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '删除失败';
-    return NextResponse.json({ message }, { status: 400 });
-  }
+      try {
+        const result = await deleteRecord(resource, id, authResult.name ?? authResult.account ?? '后台用户', authResult);
+        return NextResponse.json(result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '删除失败';
+        return NextResponse.json({ message }, { status: 400 });
+      }
+    }
+  });
 }

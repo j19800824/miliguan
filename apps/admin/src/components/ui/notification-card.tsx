@@ -12,6 +12,7 @@ export interface NotificationAction {
   id: string;
   label: string;
   type: ActionType;
+  url?: string;
   style?: ActionStyle;
   executed?: boolean;
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getStaffRecordById, resetStaffPassword } from '@/lib/database.js';
 import { getAdminSession, hasPermission } from '@/lib/auth/server';
+import { auditRoute } from '@/lib/audit';
 
 async function authorize() {
   const user = await getAdminSession();
@@ -20,28 +21,36 @@ export async function PUT(
   request: Request,
   context: { params: Promise<{ id: string }> }
 ) {
-  const authError = await authorize();
-  if (authError) return authError;
+  const user = await getAdminSession();
+  return auditRoute(request, {
+    module: 'staff',
+    action: '重置员工密码',
+    operator: user,
+    handler: async () => {
+      const authError = await authorize();
+      if (authError) return authError;
 
-  const { id } = await context.params;
-  const staff = await getStaffRecordById(id);
+      const { id } = await context.params;
+      const staff = await getStaffRecordById(id);
 
-  if (!staff) {
-    return NextResponse.json({ message: '员工不存在' }, { status: 404 });
-  }
+      if (!staff) {
+        return NextResponse.json({ message: '员工不存在' }, { status: 404 });
+      }
 
-  try {
-    const body = (await request.json()) as { password?: string };
-    const password = body.password?.trim();
+      try {
+        const body = (await request.json()) as { password?: string };
+        const password = body.password?.trim();
 
-    if (!password || password.length < 6) {
-      return NextResponse.json({ message: '新密码至少需要 6 位' }, { status: 400 });
+        if (!password || password.length < 6) {
+          return NextResponse.json({ message: '新密码至少需要 6 位' }, { status: 400 });
+        }
+
+        await resetStaffPassword(id, password, user?.name ?? user?.account ?? '后台用户');
+        return NextResponse.json({ success: true });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '重置密码失败';
+        return NextResponse.json({ message }, { status: 400 });
+      }
     }
-
-    await resetStaffPassword(id, password);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '重置密码失败';
-    return NextResponse.json({ message }, { status: 400 });
-  }
+  });
 }

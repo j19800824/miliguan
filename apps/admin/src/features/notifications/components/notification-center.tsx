@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { Icons } from '@/components/icons';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -12,19 +13,15 @@ import { useRouter } from 'next/navigation';
 
 const MAX_VISIBLE = 5;
 
-const actionRoutes: Record<string, string> = {
-  view: '/dashboard/stores',
-  'view-order': '/dashboard/orders',
-  'view-member': '/dashboard/members',
-  open: '/dashboard/kanban',
-  'view-report': '/dashboard/reports'
-};
-
 export function NotificationCenter() {
-  const { notifications, markAsRead, markAllAsRead, unreadCount } = useNotificationStore();
+  const { notifications, loadNotifications, markAsRead, markAllAsRead, unreadCount } = useNotificationStore();
   const router = useRouter();
   const count = unreadCount();
   const visibleNotifications = notifications.slice(0, MAX_VISIBLE);
+
+  useEffect(() => {
+    void loadNotifications();
+  }, [loadNotifications]);
 
   return (
     <Popover>
@@ -83,9 +80,9 @@ export function NotificationCenter() {
                   actions={notification.actions}
                   onMarkAsRead={markAsRead}
                   onAction={(notifId, actionId) => {
-                    const route = actionRoutes[actionId];
+                    const route = notification.actions?.find((action) => action.id === actionId)?.url;
                     if (route) {
-                      markAsRead(notifId);
+                      void markAsRead(notifId);
                       router.push(route);
                     }
                   }}

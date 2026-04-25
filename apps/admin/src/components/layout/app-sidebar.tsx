@@ -32,6 +32,7 @@ import { useMediaQuery } from '@/hooks/use-media-query';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import * as React from 'react';
 import { toast } from 'sonner';
@@ -97,8 +98,15 @@ export default function AppSidebar({
     <Sidebar collapsible='icon'>
       <SidebarHeader className='group-data-[collapsible=icon]:pt-4'>
         <div className='flex items-center gap-3 px-2 py-2'>
-          <div className='bg-primary text-primary-foreground flex h-9 w-9 items-center justify-center rounded-xl font-semibold'>
-            米
+          <div className='flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl bg-white p-1 shadow-sm ring-1 ring-border/60'>
+            <Image
+              src='/logo.png'
+              alt='米粒冠 Logo'
+              width={36}
+              height={36}
+              className='h-full w-full object-contain'
+              priority
+            />
           </div>
           <div className='grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden'>
             <span className='text-sm font-semibold'>米粒冠后台</span>
@@ -113,16 +121,17 @@ export default function AppSidebar({
             <SidebarMenu>
               {group.items.map((item) => {
                 const Icon = item.icon ? Icons[item.icon] : Icons.logo;
+                const hasActiveChild = item.items?.some((subItem) => pathname === subItem.url);
                 return item?.items && item?.items?.length > 0 ? (
                   <Collapsible
                     key={item.title}
                     asChild
-                    defaultOpen={item.isActive}
+                    defaultOpen={item.isActive || hasActiveChild}
                     className='group/collapsible'
                   >
                     <SidebarMenuItem>
                       <CollapsibleTrigger asChild>
-                        <SidebarMenuButton tooltip={item.title} isActive={pathname === item.url}>
+                        <SidebarMenuButton tooltip={item.title} isActive={pathname === item.url || hasActiveChild}>
                           {item.icon && <Icon />}
                           <span>{item.title}</span>
                           <Icons.chevronRight className='ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90' />

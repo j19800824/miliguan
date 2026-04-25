@@ -5,7 +5,7 @@ import type { InfobarContent } from '@/components/ui/infobar';
 
 function PageSkeleton() {
   return (
-    <div className='flex flex-1 animate-pulse flex-col gap-4 p-4 md:px-6'>
+    <div className='flex min-w-0 flex-1 animate-pulse flex-col gap-4 p-4 md:px-6'>
       <div className='flex items-center justify-between'>
         <div>
           <div className='bg-muted mb-2 h-8 w-48 rounded' />
@@ -54,15 +54,17 @@ export default function PageContainer({
   const hasHeader = pageTitle || pageHeaderAction;
 
   const inner = (
-    <div className='flex flex-1 flex-col p-4 md:px-6'>
+    <div className='flex min-w-0 flex-1 flex-col overflow-x-hidden p-4 md:px-6'>
       {hasHeader && (
-        <div className='bg-background sticky top-0 z-10 mb-4 flex items-start justify-between gap-4 pb-4'>
-          <Heading
-            title={pageTitle ?? ''}
-            description={pageDescription ?? ''}
-            infoContent={infoContent}
-          />
-          {pageHeaderAction && <div className='shrink-0'>{pageHeaderAction}</div>}
+        <div className='bg-background sticky top-0 z-10 mb-4 flex flex-col gap-4 pb-4 lg:flex-row lg:items-start lg:justify-between'>
+          <div className='min-w-0 flex-1'>
+            <Heading
+              title={pageTitle ?? ''}
+              description={pageDescription ?? ''}
+              infoContent={infoContent}
+            />
+          </div>
+          {pageHeaderAction && <div className='min-w-0 shrink-0 max-w-full overflow-x-auto'>{pageHeaderAction}</div>}
         </div>
       )}
       {content}

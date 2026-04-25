@@ -6,7 +6,7 @@ import Header from '@/components/layout/header';
 import { InfoSidebar } from '@/components/layout/info-sidebar';
 import { InfobarProvider } from '@/components/ui/infobar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-import { navGroups } from '@/config/nav-config';
+import { getNavGroupsForUser } from '@/config/nav-config';
 import { requireAdminSession } from '@/lib/auth/server';
 import { filterNavGroups } from '@/lib/permissions';
 import type { Metadata } from 'next';
@@ -26,9 +26,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const cookieStore = await cookies();
   const defaultOpen = cookieStore.get('sidebar_state')?.value === 'true';
   const user = await requireAdminSession();
-  const groups = filterNavGroups(navGroups, user.permissions);
+  const groups = filterNavGroups(getNavGroupsForUser(user), user.permissions);
   return (
-    <KBar>
+    <KBar groups={groups}>
       <SidebarProvider defaultOpen={defaultOpen}>
         <InfobarProvider defaultOpen={false}>
           <AppSidebar user={user} groups={groups} />

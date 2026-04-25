@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { hasPermission, requirePermission } from '@/lib/auth/server';
 import { getCompanyOptions, getStaffDetail, getStoreOptions } from '@/lib/database.js';
 import { StaffOrganizationActions } from '@/features/admin/components/staff-organization-actions';
+import { StatusBadge } from '@/features/admin/components/status-badge';
 
 export const metadata = {
   title: '米粒冠后台 - 员工详情'
@@ -32,10 +33,15 @@ export default async function StaffDetailPage({
   return (
     <PageContainer pageTitle={`${staff.name} / 员工详情`} pageDescription='查看员工角色、组织关系、门店绑定和销售归属配置。'>
       <div className='space-y-4'>
+        {staff.delete_status === '已删除' ? (
+          <div className='flex justify-start'>
+            <Badge variant='destructive'>已删除</Badge>
+          </div>
+        ) : null}
         <div className='grid gap-4 lg:grid-cols-4'>
           <Card><CardHeader><CardDescription>登录账号</CardDescription><CardTitle>{staff.account}</CardTitle></CardHeader></Card>
           <Card><CardHeader><CardDescription>岗位角色</CardDescription><CardTitle>{staff.role_name}</CardTitle></CardHeader></Card>
-          <Card><CardHeader><CardDescription>状态</CardDescription><CardTitle><Badge variant='outline'>{staff.status}</Badge></CardTitle></CardHeader></Card>
+          <Card><CardHeader><CardDescription>状态</CardDescription><CardTitle><StatusBadge status={staff.status} /></CardTitle></CardHeader></Card>
           <Card><CardHeader><CardDescription>最近登录</CardDescription><CardTitle>{staff.last_login}</CardTitle></CardHeader></Card>
         </div>
 
@@ -67,7 +73,7 @@ export default async function StaffDetailPage({
                 storeOptions={storeOptions}
                 initialCompanyId={staff.company_id}
                 initialStoreId={staff.store_id}
-                canEdit={hasPermission(user, 'staff:edit')}
+                canEdit={hasPermission(user, 'staff:edit') && staff.delete_status !== '已删除'}
               />
             </CardContent>
           </Card>

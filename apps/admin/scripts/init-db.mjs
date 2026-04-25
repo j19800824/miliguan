@@ -1,5 +1,5 @@
 import { Client } from 'pg';
-import { getDatabaseFilePath, initializeDatabase } from '../src/lib/database.js';
+import { closeDatabaseConnections, getDatabaseFilePath, initializeDatabase } from '../src/lib/database.js';
 
 function getAdminDatabaseUrl() {
   const rawUrl = process.env.DATABASE_URL;
@@ -41,6 +41,9 @@ async function ensureDatabaseExists() {
 }
 
 await ensureDatabaseExists();
-await initializeDatabase();
-
-console.log(`PostgreSQL database ready: ${getDatabaseFilePath()}`);
+try {
+  await initializeDatabase();
+  console.log(`PostgreSQL database ready: ${getDatabaseFilePath()}`);
+} finally {
+  await closeDatabaseConnections();
+}

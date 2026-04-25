@@ -1,7 +1,7 @@
 import { redirect } from 'next/navigation';
 import { cookies } from 'next/headers';
 import { getAdminById, getSessionUserId, touchSession } from '@/lib/database.js';
-import { ADMIN_SESSION_COOKIE, type AdminSessionUser } from './shared';
+import { ADMIN_SESSION_COOKIE, getAdminDataScope, type AdminSessionUser } from './shared';
 import { verifyAdminJwt } from './jwt';
 
 export async function getAdminSession(): Promise<AdminSessionUser | null> {
@@ -20,7 +20,8 @@ export async function getAdminSession(): Promise<AdminSessionUser | null> {
     }
 
     await touchSession(token.sessionId);
-    return getAdminById(userId);
+    const user = await getAdminById(userId);
+    return user ? { ...user, dataScope: getAdminDataScope(user) } : null;
   } catch {
     return null;
   }

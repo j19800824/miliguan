@@ -24,8 +24,8 @@ export function PurchaseOrderApproveActions({
       },
       body: JSON.stringify({
         result,
-        note: result === '通过' ? '总部审核通过，允许继续流转' : '总部审核驳回，请重新调整订货信息',
-        final_status: '已入库'
+        note: result === '通过' ? '总部审核通过，进入待入库' : '总部审核驳回，请重新调整订货信息',
+        final_status: '待入库'
       })
     });
     setLoading(null);
@@ -36,7 +36,7 @@ export function PurchaseOrderApproveActions({
       return;
     }
 
-    toast.success(result === '通过' ? '订货单已审核通过' : '订货单已驳回');
+    toast.success(result === '通过' ? '订货单已审核通过，等待确认入库' : '订货单已驳回');
     router.refresh();
   };
 

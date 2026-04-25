@@ -7,11 +7,20 @@ export const metadata = {
   title: '米粒冠后台 - 后台员工管理'
 };
 
-export default async function StaffPage() {
+export default async function StaffPage({
+  searchParams
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const search = Array.isArray(params.search) ? params.search[0] : params.search ?? '';
+  const role = Array.isArray(params.role) ? params.role[0] : params.role ?? 'all';
+  const page = Number(Array.isArray(params.page) ? params.page[0] : params.page ?? '1');
+  const pageSize = Number(Array.isArray(params.pageSize) ? params.pageSize[0] : params.pageSize ?? '10');
   const roleOptions = await getRoleOptions();
   const config = createStaffConfig(roleOptions);
   const user = await requirePermission(config.viewPermission);
-  const rows = await listAdminStaff();
+  const result = await listAdminStaff({ search, role, page, pageSize });
   const stats = await getStaffStats();
   const metrics = [
     { label: '后台员工', value: `${stats.total}`, hint: '后台账号总数' },
@@ -22,7 +31,12 @@ export default async function StaffPage() {
   return (
     <ManagementListPage
       config={createStaffConfig(roleOptions)}
-      rows={rows}
+      rows={result.rows}
+      total={result.total}
+      page={result.page}
+      pageSize={result.pageSize}
+      initialSearch={search}
+      initialFilter={role}
       metrics={metrics}
       canWrite={hasPermission(user, config.writePermission)}
       currentUserId={user.id}
