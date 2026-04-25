@@ -67,7 +67,7 @@ export function ScanScreen() {
               <Text style={styles.resultMetaItem}>回调积分: +{result?.product?.points ?? 0}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.continueBtn} onPress={handleReset} activeOpacity={0.8}>
+          <TouchableOpacity testID="scan-continue" style={styles.continueBtn} onPress={handleReset} activeOpacity={0.8}>
             <Text style={styles.continueBtnText}>继续扫码</Text>
           </TouchableOpacity>
         </View>
@@ -93,10 +93,10 @@ export function ScanScreen() {
       {state === 'scanning' && (
         <View style={styles.demoRow}>
           <Text style={styles.demoHint}>演示触发：</Text>
-          <TouchableOpacity style={styles.demoBtn} onPress={() => handleMockScan(true)} activeOpacity={0.8}>
+          <TouchableOpacity testID="scan-mock-success" style={styles.demoBtn} onPress={() => handleMockScan(true)} activeOpacity={0.8}>
             <Text style={styles.demoBtnText}>✓ 模拟成功</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.demoBtn, styles.demoBtnFail]} onPress={() => handleMockScan(false)} activeOpacity={0.8}>
+          <TouchableOpacity testID="scan-mock-fail" style={[styles.demoBtn, styles.demoBtnFail]} onPress={() => handleMockScan(false)} activeOpacity={0.8}>
             <Text style={[styles.demoBtnText, { color: Colors.danger }]}>✗ 模拟失败</Text>
           </TouchableOpacity>
         </View>

@@ -35,6 +35,7 @@ export function BossNavigator({ user, onLogout }: BossNavigatorProps) {
         options={{
           title: '经营总览',
           tabBarIcon: ({ color }) => <Chart size={24} color={color} />,
+          tabBarButtonTestID: 'tab-home',
         }}
       >
         {() => <BossHomeScreen user={user} />}
@@ -45,6 +46,7 @@ export function BossNavigator({ user, onLogout }: BossNavigatorProps) {
         options={{
           title: '积分排行',
           tabBarIcon: ({ color }) => <Trophy size={24} color={color} />,
+          tabBarButtonTestID: 'tab-ranking',
         }}
         component={SalesStaffRankingScreen}
       />
@@ -54,6 +56,7 @@ export function BossNavigator({ user, onLogout }: BossNavigatorProps) {
         options={{
           title: '我的',
           tabBarIcon: ({ color }) => <User size={24} color={color} />,
+          tabBarButtonTestID: 'tab-profile',
         }}
       >
         {() => <ProfileScreen user={user} onLogout={onLogout} />}

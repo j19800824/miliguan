@@ -36,6 +36,7 @@ export function BranchGMNavigator({ user, onLogout }: BranchGMNavigatorProps) {
         options={{
           title: '首页',
           tabBarIcon: ({ color }) => <Home size={24} color={color} />,
+          tabBarButtonTestID: 'tab-home',
         }}
       >
         {() => <BranchGMHomeScreen user={user} />}
@@ -46,6 +47,7 @@ export function BranchGMNavigator({ user, onLogout }: BranchGMNavigatorProps) {
         options={{
           title: '积分订单',
           tabBarIcon: ({ color }) => <Clipboard size={24} color={color} />,
+          tabBarButtonTestID: 'tab-orders',
         }}
         component={BranchGMOrdersScreen}
       />
@@ -55,6 +57,7 @@ export function BranchGMNavigator({ user, onLogout }: BranchGMNavigatorProps) {
         options={{
           title: '排行榜',
           tabBarIcon: ({ color }) => <Trophy size={24} color={color} />,
+          tabBarButtonTestID: 'tab-ranking',
         }}
         component={SalesStaffRankingScreen}
       />
@@ -64,6 +67,7 @@ export function BranchGMNavigator({ user, onLogout }: BranchGMNavigatorProps) {
         options={{
           title: '我的',
           tabBarIcon: ({ color }) => <User size={24} color={color} />,
+          tabBarButtonTestID: 'tab-profile',
         }}
       >
         {() => <ProfileScreen user={user} onLogout={onLogout} />}

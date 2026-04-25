@@ -61,6 +61,7 @@ export function StoreManagerNavigator({ user, onLogout }: StoreManagerNavigatorP
         options={{
           title: '首页',
           tabBarIcon: ({ color }) => <Home size={24} color={color} />,
+          tabBarButtonTestID: 'tab-home',
         }}
       >
         {(props) => (
@@ -77,6 +78,7 @@ export function StoreManagerNavigator({ user, onLogout }: StoreManagerNavigatorP
           title: '扫码',
           tabBarIcon: ({ focused }) => <ScanTabIcon focused={focused} />,
           tabBarLabelStyle: { fontSize: 11, fontWeight: '700', color: Colors.primary, marginTop: 2 },
+          tabBarButtonTestID: 'tab-scan',
         }}
         component={ScanScreen}
       />
@@ -86,6 +88,7 @@ export function StoreManagerNavigator({ user, onLogout }: StoreManagerNavigatorP
         options={{
           title: '排行榜',
           tabBarIcon: ({ color }) => <Trophy size={24} color={color} />,
+          tabBarButtonTestID: 'tab-ranking',
         }}
         component={SalesStaffRankingScreen}
       />
@@ -95,6 +98,7 @@ export function StoreManagerNavigator({ user, onLogout }: StoreManagerNavigatorP
         options={{
           title: '我的',
           tabBarIcon: ({ color }) => <User size={24} color={color} />,
+          tabBarButtonTestID: 'tab-profile',
         }}
       >
         {() => <ProfileScreen user={user} onLogout={onLogout} />}

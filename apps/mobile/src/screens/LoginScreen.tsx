@@ -83,6 +83,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           return (
             <TouchableOpacity
               key={user.id}
+              testID={`login-role-${user.role}`}
               style={[
                 styles.roleCard,
                 isSelected && { borderColor: accent, borderWidth: 2, backgroundColor: `${accent}08` },
@@ -124,6 +125,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
       {/* Login Button */}
       <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.md }]}>
         <TouchableOpacity
+          testID="login-submit"
           style={[styles.loginBtn, !selected && styles.loginBtnDisabled]}
           onPress={handleLogin}
           disabled={!selected}
