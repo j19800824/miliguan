@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import type { Product } from '@miliguan/api-client';
 import { ProductCard } from '../components/product-card';
-import { fetchProducts } from '../services/products';
+import { fetchProducts } from '../services/api/products';
 
 export function ProductsScreen() {
   const [products, setProducts] = useState<Product[]>([]);
