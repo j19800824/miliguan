@@ -1,0 +1,19 @@
+appId: host.exp.Exponent
+name: Store manager scans a barcode
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "login-role-store_manager"
+- tapOn:
+    id: "login-submit"
+- tapOn:
+    id: "tab-scan"
+- tapOn:
+    id: "scan-mock-success"
+- assertVisible: "核销成功"
+- tapOn:
+    id: "scan-continue"
+- tapOn:
+    id: "scan-mock-fail"
+- assertVisible: "核销失败"

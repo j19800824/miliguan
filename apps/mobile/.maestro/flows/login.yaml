@@ -1,0 +1,13 @@
+# For Expo Go on iOS use appId: host.exp.Exponent
+# For a native Expo dev build, replace with your bundle id (e.g. com.miliguan.mobile)
+appId: host.exp.Exponent
+name: Login flow
+---
+- launchApp:
+    clearState: true
+- assertVisible: "欢迎登录"
+- tapOn:
+    id: "login-role-boss"
+- tapOn:
+    id: "login-submit"
+- assertVisible: "经营总览"

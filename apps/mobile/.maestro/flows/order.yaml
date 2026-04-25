@@ -1,0 +1,12 @@
+appId: host.exp.Exponent
+name: Branch GM views orders list
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "login-role-branch_gm"
+- tapOn:
+    id: "login-submit"
+- tapOn:
+    id: "tab-orders"
+- assertVisible: "ORD20240401001"

@@ -1,0 +1,6 @@
+flows:
+  - flows/login.yaml
+  - flows/role-routing.yaml
+  - flows/scan.yaml
+  - flows/order.yaml
+  - flows/ranking.yaml

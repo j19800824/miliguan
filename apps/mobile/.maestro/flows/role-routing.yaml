@@ -1,0 +1,32 @@
+appId: host.exp.Exponent
+name: Each role lands on its home screen
+---
+- launchApp:
+    clearState: true
+
+# Branch GM
+- tapOn:
+    id: "login-role-branch_gm"
+- tapOn:
+    id: "login-submit"
+- assertVisible: "华东分公司"
+- tapOn:
+    id: "tab-profile"
+- tapOn: "退出登录"
+
+# Store manager
+- tapOn:
+    id: "login-role-store_manager"
+- tapOn:
+    id: "login-submit"
+- assertVisible: "静安社区店"
+- tapOn:
+    id: "tab-profile"
+- tapOn: "退出登录"
+
+# Sales staff
+- tapOn:
+    id: "login-role-sales_staff"
+- tapOn:
+    id: "login-submit"
+- assertVisible: "陈小丽"

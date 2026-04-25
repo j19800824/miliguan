@@ -1,0 +1,13 @@
+appId: host.exp.Exponent
+name: Sales staff sees ranking
+---
+- launchApp:
+    clearState: true
+- tapOn:
+    id: "login-role-sales_staff"
+- tapOn:
+    id: "login-submit"
+- tapOn:
+    id: "tab-ranking"
+- assertVisible: "陈小丽"
+- assertVisible: "王店长"
