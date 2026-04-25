@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, StyleSheet, Text, View } from 'react-native';
 import type { Product } from '@miliguan/api-client';
-import { ProductCard } from '../components/product-card';
+import { ProductCard } from '../components/ProductCard';
 import { fetchProducts } from '../services/api/products';
 
 export function ProductsScreen() {
