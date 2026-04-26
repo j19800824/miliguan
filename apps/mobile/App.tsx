@@ -16,10 +16,13 @@ SplashScreen.preventAutoHideAsync();
 export default function App() {
   const [user, setUser] = useState<MockUser | null>(null);
 
-  // When HarmonyOS Sans SC / Alibaba PuHuiTi TTFs are dropped into assets/fonts/,
-  // register them here. Empty map resolves immediately so we use system fonts
-  // (PingFang SC on iOS, sans-serif on Android).
-  const [fontsLoaded] = useFonts({});
+  // Alibaba PuHuiTi (free for commercial use) — primary on Android,
+  // overrideable on iOS too if you want consistent cross-platform glyphs.
+  const [fontsLoaded] = useFonts({
+    'AlibabaPuHuiTi-Regular': require('./assets/fonts/Alibaba-PuHuiTi-Regular.ttf'),
+    'AlibabaPuHuiTi-Medium': require('./assets/fonts/Alibaba-PuHuiTi-Medium.ttf'),
+    'AlibabaPuHuiTi-Bold': require('./assets/fonts/Alibaba-PuHuiTi-Bold.ttf'),
+  });
 
   useEffect(() => {
     if (fontsLoaded) {

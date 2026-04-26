@@ -120,25 +120,25 @@ export const Gradients = {
   gold: ['#FFD080', '#F5A827'] as const,
 };
 
-// iOS uses system PingFang SC by default. Android falls back to system sans-serif
-// unless an Alibaba PuHuiTi / HarmonyOS Sans SC TTF is dropped into assets/fonts/
-// and registered via useFonts() in App.tsx — keys here would then match those names.
+// iOS keeps system PingFang SC (Apple's PingFang is hand-tuned for screen).
+// Android uses Alibaba PuHuiTi (registered via useFonts in App.tsx,
+// free for commercial use, covers GB18030).
 import { Platform } from 'react-native';
 
 export const FontFamily = {
   regular: Platform.select({
     ios: 'PingFang SC',
-    android: 'sans-serif',
+    android: 'AlibabaPuHuiTi-Regular',
     default: 'System',
   }),
   medium: Platform.select({
     ios: 'PingFang SC',
-    android: 'sans-serif-medium',
+    android: 'AlibabaPuHuiTi-Medium',
     default: 'System',
   }),
   bold: Platform.select({
     ios: 'PingFang SC',
-    android: 'sans-serif-medium',
+    android: 'AlibabaPuHuiTi-Bold',
     default: 'System',
   }),
 };
