@@ -1,0 +1,10 @@
+# Treat font binaries as binary (no diff, no text normalization)
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# Treat lockfiles as binary so diffs aren't shown as huge walls of text
+pnpm-lock.yaml -diff
+package-lock.json -diff
+yarn.lock -diff
