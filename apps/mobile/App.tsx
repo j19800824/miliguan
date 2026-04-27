@@ -13,6 +13,7 @@ import { bootstrapApiClient } from './src/services/api/client';
 import { bootstrapAuth, logout as apiLogout, type AuthUser } from './src/services/auth/auth';
 import { registerPushToken, unregisterPushToken } from './src/services/push';
 import { replayQueue, startQueueReplayWatcher } from './src/services/api/queue';
+import { startRealtime, stopRealtime } from './src/services/realtime';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -49,10 +50,13 @@ export default function App() {
     return () => unsub();
   }, []);
 
-  // After login, register push token (best-effort).
+  // After login, register push token + open the realtime SSE stream.
   useEffect(() => {
     if (user) {
       void registerPushToken();
+      void startRealtime();
+    } else {
+      stopRealtime();
     }
   }, [user]);
 
@@ -65,6 +69,7 @@ export default function App() {
   if (!fontsLoaded || !authReady) return null;
 
   const handleLogout = async () => {
+    stopRealtime();
     await unregisterPushToken();
     await apiLogout();
     setUser(null);

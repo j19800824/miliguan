@@ -7,6 +7,7 @@ import { Chevron, QR, Scan, Sparkle, Trophy } from '../../components/Icons';
 import { Colors, FontSize, Gradients, Radius, Shadow, Spacing } from '../../constants/theme';
 import type { MockUser } from '../../data/mock';
 import { fetchVerifyRecords, type VerifyRecord } from '../../services/api';
+import { onRealtime } from '../../services/realtime';
 
 interface SalesStaffHomeScreenProps {
   user: MockUser;
@@ -19,11 +20,16 @@ export function SalesStaffHomeScreen({ user, onScan }: SalesStaffHomeScreenProps
 
   useEffect(() => {
     let active = true;
-    fetchVerifyRecords().then((data) => {
-      if (active) setRecords(data);
-    });
+    const reload = () => {
+      fetchVerifyRecords().then((data) => {
+        if (active) setRecords(data);
+      });
+    };
+    reload();
+    const unsub = onRealtime('writeoff.created', reload);
     return () => {
       active = false;
+      unsub();
     };
   }, []);
 

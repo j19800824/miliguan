@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { handlePurchaseOrderReceive } from '@/lib/database.js';
+import { handlePurchaseOrderReceive, getPurchaseOrderSummary } from '@/lib/database.js';
 import { getAdminSession, hasPermission } from '@/lib/auth/server';
 import { auditRoute } from '@/lib/audit';
+import { notifyPurchaseReceived } from '@/lib/events';
 
 export async function PUT(
   request: Request,
@@ -26,6 +27,17 @@ export async function PUT(
       try {
         const payload = (await request.json().catch(() => ({}))) as { note?: string };
         await handlePurchaseOrderReceive(id, payload, user.name ?? user.account ?? '后台用户', user);
+
+        // Additive: notify the company's staff that stock has arrived.
+        const summary = await getPurchaseOrderSummary(id);
+        if (summary?.companyId) {
+          void notifyPurchaseReceived({
+            orderNo: summary.orderNo,
+            companyId: summary.companyId,
+            actor: user.name ?? user.account,
+          });
+        }
+
         return NextResponse.json({ success: true });
       } catch (error) {
         const message = error instanceof Error ? error.message : '确认订货单入库失败';

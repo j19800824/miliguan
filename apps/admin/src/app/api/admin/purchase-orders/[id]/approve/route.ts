@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
-import { approvePurchaseOrder } from '@/lib/database.js';
+import { approvePurchaseOrder, getPurchaseOrderSummary } from '@/lib/database.js';
 import { getAdminSession, hasPermission } from '@/lib/auth/server';
 import { auditRoute } from '@/lib/audit';
+import { notifyPurchaseApproved } from '@/lib/events';
 
 async function authorize() {
   const user = await getAdminSession();
@@ -39,6 +40,20 @@ export async function PUT(
           final_status?: '待入库' | '已入库';
         };
         await approvePurchaseOrder(id, payload, user?.name ?? user?.account ?? '后台用户', user ?? {});
+
+        // Additive: notify the company's branch GM (push + SSE).
+        const summary = await getPurchaseOrderSummary(id);
+        if (summary?.companyId && payload.result) {
+          void notifyPurchaseApproved({
+            orderNo: summary.orderNo,
+            companyId: summary.companyId,
+            result: payload.result,
+            finalStatus: payload.final_status,
+            note: payload.note,
+            actor: user?.name ?? user?.account,
+          });
+        }
+
         return NextResponse.json({ success: true });
       } catch (error) {
         const message = error instanceof Error ? error.message : '审核订货单失败';

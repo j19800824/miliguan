@@ -8329,6 +8329,7 @@ export async function createMobileWriteoff(rawCode, user) {
     return {
       ok: true,
       id: String(insertResult.rows[0].id),
+      skuId: String(skuRow.id),
       product: {
         name: skuRow.product_name,
         sku: skuRow.sku_code,
@@ -8478,4 +8479,79 @@ export async function updateAdminAvatar(userId, avatarUrl) {
     `UPDATE admin_staff SET avatar_url = $2, updated_at = $3 WHERE id = $1`,
     [Number(userId), avatarUrl ?? '', now()]
   );
+}
+
+/* ---------- Staff lookup helpers (used by events.ts to fan out push) ---------- */
+
+export async function listStaffIdsByStore(storeId) {
+  if (!storeId) return [];
+  await initializeDatabase();
+  const rows = (
+    await query(
+      `SELECT id, name, account FROM admin_staff
+       WHERE store_id = $1 AND delete_status = '正常' AND status = '启用'`,
+      [Number(storeId)]
+    )
+  ).rows;
+  return rows.map((r) => ({ id: String(r.id), name: r.name, account: r.account }));
+}
+
+export async function listStaffIdsByCompany(companyId) {
+  if (!companyId) return [];
+  await initializeDatabase();
+  const rows = (
+    await query(
+      `SELECT id, name, account FROM admin_staff
+       WHERE company_id = $1 AND delete_status = '正常' AND status = '启用'`,
+      [Number(companyId)]
+    )
+  ).rows;
+  return rows.map((r) => ({ id: String(r.id), name: r.name, account: r.account }));
+}
+
+/* ---------- Purchase order summary (for event payloads) ---------- */
+
+export async function getPurchaseOrderSummary(id) {
+  if (!id) return null;
+  await initializeDatabase();
+  const row = (
+    await query(
+      `SELECT id, order_no, company_id, store_id, status
+       FROM purchase_orders WHERE id = $1`,
+      [Number(id)]
+    )
+  ).rows[0];
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    orderNo: row.order_no,
+    companyId: row.company_id ? String(row.company_id) : '',
+    storeId: row.store_id ? String(row.store_id) : '',
+    status: row.status
+  };
+}
+
+/* ---------- Inventory threshold check helper ---------- */
+
+export async function getCompanyInventoryForSku(companyId, skuId) {
+  if (!companyId || !skuId) return null;
+  await initializeDatabase();
+  const row = (
+    await query(
+      `SELECT ci.quantity, ci.safety_stock,
+              ps.sku_code, p.name AS product_name
+       FROM company_inventory ci
+       INNER JOIN product_skus ps ON ps.id = ci.sku_id
+       INNER JOIN products p ON p.id = ps.product_id
+       WHERE ci.company_id = $1 AND ci.sku_id = $2`,
+      [Number(companyId), Number(skuId)]
+    )
+  ).rows[0];
+  if (!row) return null;
+  return {
+    quantity: Number(row.quantity ?? 0),
+    safety_stock: Number(row.safety_stock ?? 0),
+    sku_code: row.sku_code,
+    product_name: row.product_name
+  };
 }

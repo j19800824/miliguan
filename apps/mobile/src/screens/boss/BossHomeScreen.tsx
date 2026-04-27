@@ -12,6 +12,7 @@ import {
   type Kpi,
   type Branch,
 } from '../../services/api';
+import { onRealtime } from '../../services/realtime';
 
 const PERIODS = ['日榜', '月榜', '年榜'] as const;
 type Period = typeof PERIODS[number];
@@ -30,13 +31,22 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([fetchKpi(), fetchBranches()]).then(([k, b]) => {
-      if (!active) return;
-      setKpi(k);
-      setBranches(b);
-    });
+    const reload = () => {
+      Promise.all([fetchKpi(), fetchBranches()]).then(([k, b]) => {
+        if (!active) return;
+        setKpi(k);
+        setBranches(b);
+      });
+    };
+    reload();
+    const unsubs = [
+      onRealtime('writeoff.created', reload),
+      onRealtime('purchase.approved', reload),
+      onRealtime('purchase.received', reload),
+    ];
     return () => {
       active = false;
+      unsubs.forEach((u) => u());
     };
   }, []);
 

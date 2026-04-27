@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme';
 import { fetchOrders, type Order } from '../../services/api';
 import { NewOrderModal } from '../../components/NewOrderModal';
+import { onRealtime } from '../../services/realtime';
 
 const TABS = ['全部', '待确认', '已完成'] as const;
 type Tab = typeof TABS[number];
@@ -31,7 +32,15 @@ export function BranchGMOrdersScreen() {
   }, []);
 
   useEffect(() => {
-    return reload();
+    const cleanup = reload();
+    const unsubs = [
+      onRealtime('purchase.approved', () => reload()),
+      onRealtime('purchase.received', () => reload()),
+    ];
+    return () => {
+      cleanup();
+      unsubs.forEach((u) => u());
+    };
   }, [reload]);
 
   const filtered = tab === '全部' ? orders : orders.filter((o) => o.status === tab);

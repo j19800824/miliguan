@@ -17,6 +17,7 @@ import {
   type InventoryItem,
   type StoreItem,
 } from '../../services/api';
+import { onRealtime } from '../../services/realtime';
 
 interface BranchGMHomeScreenProps {
   user: MockUser;
@@ -42,13 +43,22 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
 
   useEffect(() => {
     let active = true;
-    Promise.all([fetchInventory(), fetchStores()]).then(([inv, st]) => {
-      if (!active) return;
-      setInventory(inv);
-      setStores(st);
-    });
+    const reload = () => {
+      Promise.all([fetchInventory(), fetchStores()]).then(([inv, st]) => {
+        if (!active) return;
+        setInventory(inv);
+        setStores(st);
+      });
+    };
+    reload();
+    const unsubs = [
+      onRealtime('writeoff.created', reload),
+      onRealtime('purchase.received', reload),
+      onRealtime('inventory.warning', reload),
+    ];
     return () => {
       active = false;
+      unsubs.forEach((u) => u());
     };
   }, []);
 

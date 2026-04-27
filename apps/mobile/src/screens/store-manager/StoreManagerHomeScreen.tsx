@@ -7,6 +7,7 @@ import { Check, QR, Scan, Sparkle, X } from '../../components/Icons';
 import { Colors, FontSize, Gradients, Radius, Shadow, Spacing } from '../../constants/theme';
 import type { MockUser } from '../../data/mock';
 import { fetchVerifyRecords, type VerifyRecord } from '../../services/api';
+import { onRealtime } from '../../services/realtime';
 
 interface StoreManagerHomeScreenProps {
   user: MockUser;
@@ -19,11 +20,16 @@ export function StoreManagerHomeScreen({ user, onScan }: StoreManagerHomeScreenP
 
   useEffect(() => {
     let active = true;
-    fetchVerifyRecords().then((data) => {
-      if (active) setRecords(data);
-    });
+    const reload = () => {
+      fetchVerifyRecords().then((data) => {
+        if (active) setRecords(data);
+      });
+    };
+    reload();
+    const unsub = onRealtime('writeoff.created', reload);
     return () => {
       active = false;
+      unsub();
     };
   }, []);
 
