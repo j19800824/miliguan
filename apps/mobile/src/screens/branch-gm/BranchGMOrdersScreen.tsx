@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme';
 import { fetchOrders, type Order } from '../../services/api';
+import { NewOrderModal } from '../../components/NewOrderModal';
 
 const TABS = ['全部', '待确认', '已完成'] as const;
 type Tab = typeof TABS[number];
@@ -17,8 +18,9 @@ export function BranchGMOrdersScreen() {
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('全部');
   const [orders, setOrders] = useState<Order[]>([]);
+  const [modalVisible, setModalVisible] = useState(false);
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     let active = true;
     fetchOrders().then((data) => {
       if (active) setOrders(data);
@@ -27,6 +29,10 @@ export function BranchGMOrdersScreen() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    return reload();
+  }, [reload]);
 
   const filtered = tab === '全部' ? orders : orders.filter((o) => o.status === tab);
 
@@ -85,9 +91,20 @@ export function BranchGMOrdersScreen() {
         }
       />
 
+      <NewOrderModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+        onCreated={reload}
+      />
+
       {/* New Order Button */}
       <View style={[styles.fab, { bottom: insets.bottom + Spacing.lg }]}>
-        <TouchableOpacity style={styles.fabBtn} activeOpacity={0.85}>
+        <TouchableOpacity
+          testID="new-order-fab"
+          style={styles.fabBtn}
+          activeOpacity={0.85}
+          onPress={() => setModalVisible(true)}
+        >
           <Text style={styles.fabText}>+ 新建积分订单</Text>
         </TouchableOpacity>
       </View>
