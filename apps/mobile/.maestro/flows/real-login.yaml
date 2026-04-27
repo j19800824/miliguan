@@ -1,0 +1,25 @@
+# Real-backend login flow.
+# Requires:
+#   1. Admin app running at $EXPO_PUBLIC_API_BASE_URL with seeded credentials
+#   2. Mobile built with EXPO_PUBLIC_USE_MOCKS=0 + EXPO_PUBLIC_API_BASE_URL set
+#
+# Default seeded creds from apps/admin/src/lib/auth/shared.ts:
+#   admin / admin123
+#   boss / boss123
+appId: host.exp.Exponent
+name: Real-backend credential login
+---
+- launchApp:
+    clearState: true
+- assertVisible: "欢迎登录"
+- tapOn:
+    id: "login-account"
+- inputText: "boss"
+- tapOn:
+    id: "login-password"
+- inputText: "boss123"
+- tapOn:
+    id: "login-submit"
+- assertVisible:
+    text: "经营总览"
+    timeout: 10000

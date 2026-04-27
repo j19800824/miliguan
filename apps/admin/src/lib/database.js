@@ -8224,3 +8224,258 @@ export function getDatabaseFilePath() {
 export function getRedisUrl() {
   return redisUrl;
 }
+
+/* ============================================================
+ * Mobile-only extensions (Stage 3)
+ * ============================================================ */
+
+let mobileExtrasReady = false;
+
+export async function ensureMobileExtras() {
+  if (mobileExtrasReady) return;
+  await initializeDatabase();
+  await query(`
+    CREATE TABLE IF NOT EXISTS mobile_push_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      token TEXT NOT NULL UNIQUE,
+      platform TEXT NOT NULL DEFAULT 'unknown',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_mobile_push_tokens_user ON mobile_push_tokens(user_id);`);
+  await query(`ALTER TABLE admin_staff ADD COLUMN IF NOT EXISTS avatar_url TEXT NOT NULL DEFAULT '';`);
+  mobileExtrasReady = true;
+}
+
+/**
+ * Resolve a scanned barcode (or qr_code) → SKU, find the oldest open
+ * member_order_item in the user's store with that SKU, mark it written
+ * off, and insert a writeoff_records row inside one transaction.
+ */
+export async function createMobileWriteoff(rawCode, user) {
+  await initializeDatabase();
+  const code = (rawCode ?? '').trim();
+  if (!code) return { ok: false, message: '条码为空' };
+  if (!user?.storeId) return { ok: false, message: '当前账号未绑定门店' };
+
+  const skuRow = (
+    await query(
+      `
+        SELECT product_skus.id, product_skus.sku_code, product_skus.barcode,
+               product_skus.qr_code, products.name AS product_name,
+               product_skus.redeem_points_price
+        FROM product_skus
+        INNER JOIN products ON products.id = product_skus.product_id
+        WHERE product_skus.barcode = $1 OR product_skus.qr_code = $1 OR product_skus.sku_code = $1
+        LIMIT 1
+      `,
+      [code]
+    )
+  ).rows[0];
+  if (!skuRow) return { ok: false, message: '未识别商品' };
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const itemRow = (
+      await client.query(
+        `
+          SELECT moi.id AS item_id, moi.member_order_id, mo.sales_staff_name
+          FROM member_order_items moi
+          INNER JOIN member_orders mo ON mo.id = moi.member_order_id
+          WHERE moi.sku_id = $1
+            AND mo.store_id = $2
+            AND mo.delete_status = '正常'
+            AND moi.writeoff_status = '待核销'
+          ORDER BY mo.created_at ASC
+          LIMIT 1
+        `,
+        [skuRow.id, Number(user.storeId)]
+      )
+    ).rows[0];
+
+    if (!itemRow) {
+      await client.query('ROLLBACK');
+      return { ok: false, message: '已核销或无可核销订单' };
+    }
+
+    const writeoffTime = new Date().toLocaleString('zh-CN', { hour12: false });
+    const insertResult = await client.query(
+      `
+        INSERT INTO writeoff_records
+          (member_order_id, sku_id, store_id, sales_staff_name, product_code, status, writeoff_time, remark)
+        VALUES ($1, $2, $3, $4, $5, '成功', $6, '移动端扫码核销')
+        RETURNING id
+      `,
+      [
+        itemRow.member_order_id,
+        skuRow.id,
+        Number(user.storeId),
+        user.fullName ?? user.name ?? '移动端用户',
+        code,
+        writeoffTime
+      ]
+    );
+
+    await client.query(
+      `UPDATE member_order_items SET writeoff_status = '已核销' WHERE id = $1`,
+      [itemRow.item_id]
+    );
+
+    await client.query('COMMIT');
+
+    return {
+      ok: true,
+      id: String(insertResult.rows[0].id),
+      product: {
+        name: skuRow.product_name,
+        sku: skuRow.sku_code,
+        points: Number(skuRow.redeem_points_price ?? 0)
+      }
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getMobileKpiOverview(user) {
+  await initializeDatabase();
+  const last30 = `created_at >= NOW() - INTERVAL '30 days'`;
+  const prev30 = `created_at >= NOW() - INTERVAL '60 days' AND created_at < NOW() - INTERVAL '30 days'`;
+  const companyParams = user?.companyId ? [Number(user.companyId)] : [];
+  const companyClause = user?.companyId ? 'AND company_id = $1' : '';
+
+  const salesNow = Number(
+    (
+      await query(
+        `SELECT COALESCE(SUM(total_amount), 0)::numeric AS s
+         FROM member_orders
+         WHERE delete_status = '正常' AND ${last30} ${companyClause}`,
+        companyParams
+      )
+    ).rows[0].s
+  );
+  const salesPrev = Number(
+    (
+      await query(
+        `SELECT COALESCE(SUM(total_amount), 0)::numeric AS s
+         FROM member_orders
+         WHERE delete_status = '正常' AND ${prev30} ${companyClause}`,
+        companyParams
+      )
+    ).rows[0].s
+  );
+
+  const verifyNow = Number(
+    (
+      await query(
+        `SELECT COUNT(*)::int AS c
+         FROM writeoff_records w
+         INNER JOIN member_orders mo ON mo.id = w.member_order_id
+         WHERE w.status = '成功'
+           AND mo.delete_status = '正常'
+           AND mo.created_at >= NOW() - INTERVAL '30 days'
+           ${user?.companyId ? 'AND mo.company_id = $1' : ''}`,
+        companyParams
+      )
+    ).rows[0].c
+  );
+  const verifyPrev = Number(
+    (
+      await query(
+        `SELECT COUNT(*)::int AS c
+         FROM writeoff_records w
+         INNER JOIN member_orders mo ON mo.id = w.member_order_id
+         WHERE w.status = '成功'
+           AND mo.delete_status = '正常'
+           AND mo.created_at >= NOW() - INTERVAL '60 days'
+           AND mo.created_at < NOW() - INTERVAL '30 days'
+           ${user?.companyId ? 'AND mo.company_id = $1' : ''}`,
+        companyParams
+      )
+    ).rows[0].c
+  );
+
+  const totalPoints = Number(
+    (
+      await query(
+        `SELECT COALESCE(SUM(points), 0)::numeric AS s FROM point_redeem_orders`,
+        []
+      )
+    ).rows[0].s
+  );
+
+  const totalInventory = Number(
+    (
+      await query(
+        `SELECT COALESCE(SUM(quantity), 0)::int AS s
+         FROM company_inventory ${user?.companyId ? 'WHERE company_id = $1' : ''}`,
+        companyParams
+      )
+    ).rows[0].s
+  );
+
+  function pct(nowVal, prevVal) {
+    if (!prevVal) return nowVal > 0 ? '+100.0%' : '+0.0%';
+    const change = ((nowVal - prevVal) / prevVal) * 100;
+    return `${change >= 0 ? '+' : ''}${change.toFixed(1)}%`;
+  }
+
+  function fmt(n) {
+    return Number(n || 0).toLocaleString('en-US');
+  }
+
+  return {
+    totalSales: fmt(salesNow),
+    totalVerify: fmt(verifyNow),
+    totalPoints: fmt(totalPoints),
+    totalInventory: fmt(totalInventory),
+    salesGrowth: pct(salesNow, salesPrev),
+    verifyGrowth: pct(verifyNow, verifyPrev)
+  };
+}
+
+export async function registerMobilePushToken(userId, token, platform = 'unknown') {
+  await ensureMobileExtras();
+  const timestamp = now();
+  await query(
+    `
+      INSERT INTO mobile_push_tokens (user_id, token, platform, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $4)
+      ON CONFLICT (token) DO UPDATE SET
+        user_id = EXCLUDED.user_id,
+        platform = EXCLUDED.platform,
+        updated_at = EXCLUDED.updated_at
+    `,
+    [Number(userId), token, platform, timestamp]
+  );
+}
+
+export async function unregisterMobilePushToken(token) {
+  await ensureMobileExtras();
+  await query(`DELETE FROM mobile_push_tokens WHERE token = $1`, [token]);
+}
+
+export async function listMobilePushTokens(userId) {
+  await ensureMobileExtras();
+  const rows = (
+    await query(
+      `SELECT token, platform FROM mobile_push_tokens WHERE user_id = $1`,
+      [Number(userId)]
+    )
+  ).rows;
+  return rows.map((r) => ({ token: r.token, platform: r.platform }));
+}
+
+export async function updateAdminAvatar(userId, avatarUrl) {
+  await ensureMobileExtras();
+  await query(
+    `UPDATE admin_staff SET avatar_url = $2, updated_at = $3 WHERE id = $1`,
+    [Number(userId), avatarUrl ?? '', now()]
+  );
+}

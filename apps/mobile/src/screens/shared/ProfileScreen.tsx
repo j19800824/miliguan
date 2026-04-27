@@ -1,5 +1,16 @@
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { pickAndUploadAvatar } from '../../services/upload';
 import {
   Bell,
   Building,
@@ -59,6 +70,24 @@ const MENU_ITEMS: MenuItem[] = [
 export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
   const insets = useSafeAreaInsets();
   const roleColor = ROLE_COLOR[user.role];
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(
+    (user as { avatarUrl?: string }).avatarUrl || null,
+  );
+  const [uploading, setUploading] = useState(false);
+
+  const handleChangeAvatar = async () => {
+    if (uploading) return;
+    setUploading(true);
+    try {
+      const next = await pickAndUploadAvatar();
+      if (next) setAvatarUrl(next);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '上传失败';
+      Alert.alert('头像更新失败', msg);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
     <ScrollView
@@ -76,16 +105,30 @@ export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
 
       {/* Profile Card */}
       <View style={styles.profileCard}>
-        {/* Rounded-square avatar with role-tinted bg and border */}
-        <View style={[
-          styles.avatarWrap,
-          {
-            backgroundColor: `${roleColor}14`,
-            borderColor: `${roleColor}33`,
-          },
-        ]}>
-          <RoleAvatar role={user.role} color={roleColor} />
-        </View>
+        {/* Tap to change — opens image picker, uploads via OSS, saves URL. */}
+        <TouchableOpacity
+          testID="profile-avatar"
+          onPress={handleChangeAvatar}
+          activeOpacity={0.8}
+          style={[
+            styles.avatarWrap,
+            {
+              backgroundColor: `${roleColor}14`,
+              borderColor: `${roleColor}33`,
+            },
+          ]}
+        >
+          {avatarUrl ? (
+            <Image source={{ uri: avatarUrl }} style={styles.avatarImage} />
+          ) : (
+            <RoleAvatar role={user.role} color={roleColor} />
+          )}
+          {uploading && (
+            <View style={styles.avatarUploading}>
+              <ActivityIndicator color="#fff" />
+            </View>
+          )}
+        </TouchableOpacity>
 
         <View style={styles.info}>
           <Text style={styles.name}>{user.name}</Text>
@@ -177,6 +220,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 18,
+  },
+  avatarUploading: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   info: { flex: 1, marginLeft: Spacing.md },
   name: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary },

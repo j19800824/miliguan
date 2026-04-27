@@ -11,6 +11,8 @@ import { StoreManagerNavigator } from './src/navigation/StoreManagerNavigator';
 import { SalesStaffNavigator } from './src/navigation/SalesStaffNavigator';
 import { bootstrapApiClient } from './src/services/api/client';
 import { bootstrapAuth, logout as apiLogout, type AuthUser } from './src/services/auth/auth';
+import { registerPushToken, unregisterPushToken } from './src/services/push';
+import { replayQueue, startQueueReplayWatcher } from './src/services/api/queue';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -40,6 +42,20 @@ export default function App() {
     };
   }, []);
 
+  // Once the network is back, replay any queued writes; also try once at boot.
+  useEffect(() => {
+    void replayQueue();
+    const unsub = startQueueReplayWatcher();
+    return () => unsub();
+  }, []);
+
+  // After login, register push token (best-effort).
+  useEffect(() => {
+    if (user) {
+      void registerPushToken();
+    }
+  }, [user]);
+
   useEffect(() => {
     if (fontsLoaded && authReady) {
       SplashScreen.hideAsync();
@@ -49,6 +65,7 @@ export default function App() {
   if (!fontsLoaded || !authReady) return null;
 
   const handleLogout = async () => {
+    await unregisterPushToken();
     await apiLogout();
     setUser(null);
   };
