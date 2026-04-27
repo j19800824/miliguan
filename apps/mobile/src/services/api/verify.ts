@@ -15,7 +15,7 @@ export interface VerifyScanResult {
 
 export async function fetchVerifyRecords(): Promise<VerifyRecord[]> {
   if (shouldUseMocks()) return MOCK_VERIFY_RECORDS;
-  return getApiClient()<VerifyRecord[]>('/verify/records');
+  return getApiClient()<VerifyRecord[]>('/api/mobile/verify/records');
 }
 
 export async function postVerifyScan(
@@ -30,7 +30,7 @@ export async function postVerifyScan(
       product: { name: '低GI免煮米 2kg', sku: 'MLG-2KG-001', points: 60 },
     };
   }
-  return getApiClient()<VerifyScanResult>('/verify/scan', {
+  return getApiClient()<VerifyScanResult>('/api/mobile/verify/scan', {
     method: 'POST',
     body: JSON.stringify(req),
   });

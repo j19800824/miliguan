@@ -8,5 +8,5 @@ export async function fetchRanking(
   period: RankingPeriod = 'daily',
 ): Promise<RankingEntry[]> {
   if (shouldUseMocks()) return MOCK_RANKING_DAILY;
-  return getApiClient()<RankingEntry[]>(`/ranking?period=${period}`);
+  return getApiClient()<RankingEntry[]>(`/api/mobile/ranking?period=${period}`);
 }

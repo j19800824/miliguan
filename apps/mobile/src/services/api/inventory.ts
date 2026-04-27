@@ -5,5 +5,5 @@ export type InventoryItem = (typeof MOCK_INVENTORY)[number];
 
 export async function fetchInventory(): Promise<InventoryItem[]> {
   if (shouldUseMocks()) return MOCK_INVENTORY;
-  return getApiClient()<InventoryItem[]>('/inventory');
+  return getApiClient()<InventoryItem[]>('/api/mobile/inventory');
 }

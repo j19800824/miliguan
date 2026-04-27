@@ -5,5 +5,5 @@ export type Kpi = typeof MOCK_KPI;
 
 export async function fetchKpi(): Promise<Kpi> {
   if (shouldUseMocks()) return MOCK_KPI;
-  return getApiClient()<Kpi>('/kpi/overview');
+  return getApiClient()<Kpi>('/api/mobile/kpi/overview');
 }

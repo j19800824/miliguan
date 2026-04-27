@@ -9,30 +9,49 @@ import { BossNavigator } from './src/navigation/BossNavigator';
 import { BranchGMNavigator } from './src/navigation/BranchGMNavigator';
 import { StoreManagerNavigator } from './src/navigation/StoreManagerNavigator';
 import { SalesStaffNavigator } from './src/navigation/SalesStaffNavigator';
-import type { MockUser } from './src/data/mock';
+import { bootstrapApiClient } from './src/services/api/client';
+import { bootstrapAuth, logout as apiLogout, type AuthUser } from './src/services/auth/auth';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {
-  const [user, setUser] = useState<MockUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
-  // Alibaba PuHuiTi (free for commercial use) — primary on Android,
-  // overrideable on iOS too if you want consistent cross-platform glyphs.
   const [fontsLoaded] = useFonts({
     'AlibabaPuHuiTi-Regular': require('./assets/fonts/Alibaba-PuHuiTi-Regular.ttf'),
     'AlibabaPuHuiTi-Medium': require('./assets/fonts/Alibaba-PuHuiTi-Medium.ttf'),
     'AlibabaPuHuiTi-Bold': require('./assets/fonts/Alibaba-PuHuiTi-Bold.ttf'),
   });
 
+  // Restore session from secure storage on launch.
   useEffect(() => {
-    if (fontsLoaded) {
+    let active = true;
+    (async () => {
+      await bootstrapApiClient();
+      const restored = await bootstrapAuth();
+      if (active) {
+        setUser(restored);
+        setAuthReady(true);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (fontsLoaded && authReady) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded]);
+  }, [fontsLoaded, authReady]);
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded || !authReady) return null;
 
-  const handleLogout = () => setUser(null);
+  const handleLogout = async () => {
+    await apiLogout();
+    setUser(null);
+  };
 
   if (!user) {
     return (
