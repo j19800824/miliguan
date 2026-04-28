@@ -8962,3 +8962,214 @@ export async function listPendingReplenishmentsForBranch(user) {
     createdAt: r.created_at
   }));
 }
+
+/* ============================================================
+ * Stage 6: Points history + branch / store summaries for mobile
+ * ============================================================ */
+
+/**
+ * Returns a unified, time-sorted list of point-affecting events for the
+ * caller's scope. Right now it sources from writeoff_records (positive
+ * credits). When a future "points spent" stream is added, append it here.
+ */
+export async function getPointsHistoryForUser(user, { limit = 50 } = {}) {
+  await initializeDatabase();
+  const params = [];
+  let where = `w.status = '成功'`;
+  if (user?.storeId) {
+    params.push(Number(user.storeId));
+    where += ` AND w.store_id = $${params.length}`;
+  } else if (user?.companyId) {
+    params.push(Number(user.companyId));
+    where += ` AND mo.company_id = $${params.length}`;
+  }
+  params.push(Math.max(1, Math.min(200, Number(limit) || 50)));
+  const rows = (
+    await query(
+      `
+        SELECT w.id, w.writeoff_time AS time, w.product_code,
+               w.sales_staff_name, w.remark, w.store_id,
+               cs.name AS store_name,
+               ps.sku_code, ps.redeem_points_price,
+               p.name AS product_name
+        FROM writeoff_records w
+        LEFT JOIN member_orders mo ON mo.id = w.member_order_id
+        LEFT JOIN company_stores cs ON cs.id = w.store_id
+        LEFT JOIN product_skus ps ON ps.id = w.sku_id
+        LEFT JOIN products p ON p.id = ps.product_id
+        WHERE ${where}
+        ORDER BY w.id DESC
+        LIMIT $${params.length}
+      `,
+      params
+    )
+  ).rows;
+  return rows.map((r) => ({
+    id: String(r.id),
+    time: r.time ?? '',
+    direction: 'in',
+    amount: Number(r.redeem_points_price ?? 0),
+    productName: r.product_name ?? r.sku_code ?? '商品',
+    storeName: r.store_name ?? '',
+    operator: r.sales_staff_name ?? '',
+    source: '核销回积分',
+    note: r.remark ?? ''
+  }));
+}
+
+export async function getBranchSummary(companyId) {
+  if (!companyId) return null;
+  await initializeDatabase();
+  const company = (
+    await query(
+      `SELECT id, name, code, available_order_quota, total_order_quota
+       FROM companies WHERE id = $1`,
+      [Number(companyId)]
+    )
+  ).rows[0];
+  if (!company) return null;
+
+  const storeCount = Number(
+    (
+      await query(
+        `SELECT COUNT(*)::int AS c FROM company_stores
+         WHERE company_id = $1 AND delete_status = '正常'`,
+        [Number(companyId)]
+      )
+    ).rows[0].c
+  );
+  const orderTotal = Number(
+    (
+      await query(
+        `SELECT COALESCE(SUM(total_amount), 0)::numeric AS s
+         FROM member_orders
+         WHERE company_id = $1 AND delete_status = '正常'
+           AND created_at >= NOW() - INTERVAL '30 days'`,
+        [Number(companyId)]
+      )
+    ).rows[0].s
+  );
+  const inventoryQty = Number(
+    (
+      await query(
+        `SELECT COALESCE(SUM(quantity), 0)::int AS s
+         FROM company_inventory WHERE company_id = $1`,
+        [Number(companyId)]
+      )
+    ).rows[0].s
+  );
+  const lowStock = Number(
+    (
+      await query(
+        `SELECT COUNT(*)::int AS c
+         FROM company_inventory
+         WHERE company_id = $1 AND safety_stock > 0
+           AND quantity <= safety_stock`,
+        [Number(companyId)]
+      )
+    ).rows[0].c
+  );
+
+  return {
+    id: String(company.id),
+    name: company.name,
+    code: company.code,
+    availableQuota: Number(company.available_order_quota ?? 0),
+    totalQuota: Number(company.total_order_quota ?? 0),
+    storeCount,
+    salesLast30: orderTotal,
+    inventoryQty,
+    lowStockCount: lowStock
+  };
+}
+
+export async function getStoreSummary(storeId) {
+  if (!storeId) return null;
+  await ensureStoreInventoryTables();
+  const store = (
+    await query(
+      `SELECT id, company_id, name, manager_name, manager_phone, address
+       FROM company_stores WHERE id = $1`,
+      [Number(storeId)]
+    )
+  ).rows[0];
+  if (!store) return null;
+
+  const todayVerify = Number(
+    (
+      await query(
+        `SELECT COUNT(*)::int AS c FROM writeoff_records
+         WHERE store_id = $1 AND status = '成功'
+           AND writeoff_time::text LIKE TO_CHAR(NOW(), 'YYYY/MM/DD') || '%'`,
+        [Number(storeId)]
+      )
+    ).rows[0].c
+  );
+  const skuCount = Number(
+    (
+      await query(
+        `SELECT COUNT(*)::int AS c FROM store_inventory WHERE store_id = $1`,
+        [Number(storeId)]
+      )
+    ).rows[0].c
+  );
+  const lowStock = Number(
+    (
+      await query(
+        `SELECT COUNT(*)::int AS c FROM store_inventory
+         WHERE store_id = $1 AND safety_stock > 0
+           AND quantity <= safety_stock`,
+        [Number(storeId)]
+      )
+    ).rows[0].c
+  );
+
+  return {
+    id: String(store.id),
+    companyId: String(store.company_id ?? ''),
+    name: store.name,
+    managerName: store.manager_name ?? '',
+    managerPhone: store.manager_phone ?? '',
+    address: store.address ?? '',
+    todayVerifyCount: todayVerify,
+    skuCount,
+    lowStockCount: lowStock
+  };
+}
+
+export async function getStoreTodayStats(storeId, staffName) {
+  if (!storeId) return { storeVerifyCount: 0, myVerifyCount: 0, todayPoints: 0 };
+  await initializeDatabase();
+  const today = `TO_CHAR(NOW(), 'YYYY/MM/DD')`;
+  const storeRow = (
+    await query(
+      `SELECT COUNT(*)::int AS c,
+              COALESCE(SUM(ps.redeem_points_price), 0)::numeric AS pts
+       FROM writeoff_records w
+       LEFT JOIN product_skus ps ON ps.id = w.sku_id
+       WHERE w.store_id = $1 AND w.status = '成功'
+         AND w.writeoff_time::text LIKE ${today} || '%'`,
+      [Number(storeId)]
+    )
+  ).rows[0];
+  let myCount = 0;
+  if (staffName) {
+    myCount = Number(
+      (
+        await query(
+          `SELECT COUNT(*)::int AS c
+           FROM writeoff_records
+           WHERE store_id = $1 AND status = '成功'
+             AND sales_staff_name = $2
+             AND writeoff_time::text LIKE ${today} || '%'`,
+          [Number(storeId), staffName]
+        )
+      ).rows[0].c
+    );
+  }
+  return {
+    storeVerifyCount: Number(storeRow?.c ?? 0),
+    myVerifyCount: myCount,
+    todayPoints: Number(storeRow?.pts ?? 0)
+  };
+}
