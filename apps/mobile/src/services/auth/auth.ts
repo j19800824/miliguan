@@ -50,11 +50,48 @@ function adaptUser(raw: SignInResponse['user']): AuthUser {
   };
 }
 
+/**
+ * Map a backend role onto one of the 4 mobile UI roles.
+ *
+ * Scope is the primary signal because the `roles.scope` column in admin
+ * is an enum-like field ('平台' / '分公司' / '门店') edited under tighter
+ * control than `role_name` (which any admin with staff:edit can rename).
+ *
+ * role_name keyword matching is kept only as a safety net for unusual or
+ * legacy data where scope is missing.
+ */
 function inferRole(roleName: string, scope: string): Role {
+  const trimmedScope = scope.trim();
+
+  // Primary path: stable scope column.
+  if (trimmedScope === '分公司') return 'branch_gm';
+  if (trimmedScope === '门店') return 'store_manager';
+  if (trimmedScope === '平台' || trimmedScope === '总部' || trimmedScope === '总公司') {
+    return 'boss';
+  }
+
+  // Fallback: legacy / mis-scoped rows — sniff role_name.
   const haystack = `${roleName}${scope}`.toLowerCase();
-  if (haystack.includes('boss') || roleName.includes('老板')) return 'boss';
-  if (haystack.includes('branch') || scope.includes('分公司')) return 'branch_gm';
-  if (haystack.includes('store') || roleName.includes('店长')) return 'store_manager';
+  if (
+    haystack.includes('boss') ||
+    roleName.includes('老板') ||
+    roleName.includes('超级') ||
+    roleName.includes('总部') ||
+    roleName.includes('总公司') ||
+    roleName.includes('平台')
+  ) {
+    return 'boss';
+  }
+  if (haystack.includes('branch') || roleName.includes('分公司')) {
+    return 'branch_gm';
+  }
+  if (
+    haystack.includes('store') ||
+    roleName.includes('店长') ||
+    roleName.includes('门店')
+  ) {
+    return 'store_manager';
+  }
   return 'sales_staff';
 }
 

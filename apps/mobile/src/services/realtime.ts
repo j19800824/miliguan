@@ -29,7 +29,10 @@ class RealtimeClient {
       const token = await loadToken();
       if (!token) return;
       this.es = new EventSource(`${baseUrl}/api/mobile/events`, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'ngrok-skip-browser-warning': 'true',
+        },
         // react-native-sse will auto-reconnect on transport errors.
         pollingInterval: 0,
       } as any);

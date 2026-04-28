@@ -2,6 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { createClient } from 'redis';
 import { hashPassword, isPasswordHash, verifyPassword } from './auth/password.js';
+import {
+  DEFAULT_ACCOUNT_PASSWORD,
+  formatAccountSmsResult,
+  isMainlandMobile,
+  sendAccountPasswordSmsSafe
+} from './sms.js';
 
 const databaseUrl = process.env.DATABASE_URL;
 const redisUrl = process.env.REDIS_URL;
@@ -3095,8 +3101,14 @@ function mapAdminUser(row, permissions) {
   };
 }
 
-export async function getAdminByAccount(account, password) {
+async function getStaffByAccount(account, password, loginScope = 'admin') {
   await initializeDatabase();
+  const scopeClause =
+    loginScope === 'app'
+      ? "AND admin_staff.login_scope = 'app'"
+      : loginScope === 'mobile'
+        ? ''
+      : "AND admin_staff.login_scope != 'app'";
   const result = await query(
     `
       SELECT
@@ -3116,10 +3128,10 @@ export async function getAdminByAccount(account, password) {
         roles.scope AS role_scope
       FROM admin_staff
       LEFT JOIN roles ON roles.id = admin_staff.role_id
-      WHERE admin_staff.account = $1
+      WHERE (admin_staff.account = $1 OR admin_staff.phone = $1)
         AND admin_staff.status != '停用'
         AND admin_staff.delete_status = '正常'
-        AND admin_staff.login_scope != 'app'
+        ${scopeClause}
     `,
     [account]
   );
@@ -3139,6 +3151,18 @@ export async function getAdminByAccount(account, password) {
   }
   const permissions = await getPermissionsByRoleId(row.role_id);
   return mapAdminUser(row, permissions);
+}
+
+export async function getAdminByAccount(account, password) {
+  return getStaffByAccount(account, password, 'admin');
+}
+
+export async function getAppAdminByAccount(account, password) {
+  return getStaffByAccount(account, password, 'app');
+}
+
+export async function getMobileAdminByAccount(account, password) {
+  return getStaffByAccount(account, password, 'mobile');
 }
 
 export async function getAdminById(id) {
@@ -6476,7 +6500,7 @@ export async function createCompanyStore(companyId, payload, actorName = '后台
   const timestamp = now();
   const defaultStoreQuota = await getDefaultStoreOrderQuota();
   const storeCode = await generateStoreCode(companyId, company.code);
-  const initialPassword = managerPhone.slice(-6).padStart(6, '0');
+  const initialPassword = DEFAULT_ACCOUNT_PASSWORD;
   const hashedPassword = await hashPassword(initialPassword);
 
   const client = await pool.connect();
@@ -6537,15 +6561,25 @@ export async function createCompanyStore(companyId, payload, actorName = '后台
     );
     await client.query('COMMIT');
 
+    const smsResult = await sendAccountPasswordSmsSafe({
+      phone: managerPhone,
+      name: managerName,
+      account: managerPhone,
+      password: initialPassword,
+      scene: '门店负责人账号创建'
+    });
     await appendApprovalLog({
       entityType: 'company_store',
       entityId: result.rows[0].id,
       action: '新增门店',
       result: '已创建',
-      note: `自动创建门店 App 负责人账号 ${managerPhone}，初始密码为手机号后 6 位`,
+      note: `自动创建门店 App 负责人账号 ${managerPhone}，${smsResult.sent ? '账号密码短信已发送' : `短信未发送：${smsResult.message}`}`,
       createdBy: actorName
     });
-    return result.rows[0].id;
+    return {
+      id: result.rows[0].id,
+      message: formatAccountSmsResult('门店创建成功，负责人账号已自动创建', smsResult)
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -7943,17 +7977,41 @@ export async function createRecord(entity, payload, actorName = '后台用户', 
         throw new Error('不支持的资源类型');
       }
       const timestamp = now();
-      const normalizedPayload =
-        entity === 'staff'
-          ? { ...payload, password: await hashPassword(String(payload.password ?? '').trim()) }
-          : payload;
+      let smsResult = null;
+      let normalizedPayload = payload;
+      if (entity === 'staff') {
+        const phone = String(payload.phone ?? '').trim();
+        if (!isMainlandMobile(phone)) {
+          throw new Error('请填写 11 位员工手机号，用于发送初始密码短信');
+        }
+        normalizedPayload = {
+          ...payload,
+          phone,
+          password: await hashPassword(DEFAULT_ACCOUNT_PASSWORD)
+        };
+      }
       const values = config.normalize(normalizedPayload);
       const result = await query(
         `INSERT INTO ${config.table} ${config.insertColumns} VALUES ${config.insertPlaceholders} RETURNING id`,
         [...values, timestamp, timestamp]
       );
       await markUpdatedBy(config.table, result.rows[0].id, actorName);
-      return { id: result.rows[0].id, message: '新增成功' };
+      if (entity === 'staff') {
+        smsResult = await sendAccountPasswordSmsSafe({
+          phone: normalizedPayload.phone,
+          name: normalizedPayload.name,
+          account: normalizedPayload.account,
+          password: DEFAULT_ACCOUNT_PASSWORD,
+          scene: '后台员工账号创建'
+        });
+      }
+      return {
+        id: result.rows[0].id,
+        message:
+          entity === 'staff'
+            ? formatAccountSmsResult('员工账号创建成功', smsResult)
+            : '新增成功'
+      };
     }
   }
 }
@@ -8139,15 +8197,42 @@ export async function updateStaffStatus(id, status, actorName = '后台用户') 
   ]);
 }
 
-export async function resetStaffPassword(id, password, actorName = '后台用户') {
+export async function resetStaffPassword(id, password = DEFAULT_ACCOUNT_PASSWORD, actorName = '后台用户') {
   await initializeDatabase();
-  const hashedPassword = await hashPassword(password);
+  const staff = (
+    await query(
+      `
+        SELECT id, name, account, phone
+        FROM admin_staff
+        WHERE id = $1 AND delete_status = '正常'
+      `,
+      [Number(id)]
+    )
+  ).rows[0];
+
+  if (!staff) {
+    throw new Error('员工不存在');
+  }
+  if (!isMainlandMobile(staff.phone)) {
+    throw new Error('员工手机号无效，无法发送密码短信');
+  }
+
+  const nextPassword = String(password || DEFAULT_ACCOUNT_PASSWORD);
+  const hashedPassword = await hashPassword(nextPassword);
   await query('UPDATE admin_staff SET password = $1, updated_by = $2, updated_at = $3 WHERE id = $4', [
     hashedPassword,
     actorName,
     now(),
     Number(id)
   ]);
+  const smsResult = await sendAccountPasswordSmsSafe({
+    phone: staff.phone,
+    name: staff.name,
+    account: staff.account,
+    password: nextPassword,
+    scene: '后台员工密码重置'
+  });
+  return { message: formatAccountSmsResult('密码已重置为默认密码', smsResult) };
 }
 
 export async function changeAdminPassword(id, currentPassword, nextPassword) {
@@ -8405,7 +8490,7 @@ export async function getMobileKpiOverview(user) {
   const totalPoints = Number(
     (
       await query(
-        `SELECT COALESCE(SUM(points), 0)::numeric AS s FROM point_redeem_orders`,
+        `SELECT COALESCE(SUM(points_cost), 0)::numeric AS s FROM point_redeem_orders`,
         []
       )
     ).rows[0].s

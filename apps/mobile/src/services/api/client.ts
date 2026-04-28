@@ -46,7 +46,10 @@ export function getApiClient(): ApiClient {
   const cacheKey = `${baseUrl}::${token ?? ''}`;
   if (cachedClient && cachedKey === cacheKey) return cachedClient;
 
-  const defaultHeaders: Record<string, string> = {};
+  const defaultHeaders: Record<string, string> = {
+    // Bypass ngrok-free.dev's browser interstitial (no-op on real domains).
+    'ngrok-skip-browser-warning': 'true',
+  };
   if (token) defaultHeaders['Authorization'] = `Bearer ${token}`;
 
   cachedClient = createApiClient({ baseUrl, defaultHeaders });

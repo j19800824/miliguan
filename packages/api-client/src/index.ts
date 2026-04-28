@@ -1,4 +1,4 @@
-export { createApiClient } from './http';
+export { createApiClient, ApiError } from './http';
 export type { ApiClientOptions } from './http';
 export {
   getProducts,
