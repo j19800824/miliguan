@@ -1,21 +1,29 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Colors } from '../constants/theme';
 import { Home, Clipboard, Package, Trophy, User } from '../components/Icons';
 import { BranchGMHomeScreen } from '../screens/branch-gm/BranchGMHomeScreen';
 import { BranchGMOrdersScreen } from '../screens/branch-gm/BranchGMOrdersScreen';
-import { InventoryScreen } from '../screens/shared/InventoryScreen';
 import { SalesStaffRankingScreen } from '../screens/sales-staff/SalesStaffRankingScreen';
 import { ProfileScreen } from '../screens/shared/ProfileScreen';
+import { InventoryScreen } from '../screens/shared/InventoryScreen';
+import { PointsHistoryScreen } from '../screens/shared/PointsHistoryScreen';
+import { VerifyHistoryScreen } from '../screens/shared/VerifyHistoryScreen';
+import { NotificationsScreen } from '../screens/shared/NotificationsScreen';
+import { MyReplenishmentsScreen } from '../screens/shared/MyReplenishmentsScreen';
+import { StoresScreen } from '../screens/shared/StoresScreen';
+import { StoreDetailScreen } from '../screens/shared/StoreDetailScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-interface BranchGMNavigatorProps {
+interface NavProps {
   user: MockUser;
   onLogout: () => void;
 }
 
-export function BranchGMNavigator({ user, onLogout }: BranchGMNavigatorProps) {
+function MainTabs({ user, onLogout }: NavProps) {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -85,5 +93,45 @@ export function BranchGMNavigator({ user, onLogout }: BranchGMNavigatorProps) {
         {() => <ProfileScreen user={user} onLogout={onLogout} />}
       </Tab.Screen>
     </Tab.Navigator>
+  );
+}
+
+export function BranchGMNavigator({ user, onLogout }: NavProps) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs">
+        {() => <MainTabs user={user} onLogout={onLogout} />}
+      </Stack.Screen>
+      <Stack.Screen
+        name="PointsHistory"
+        component={PointsHistoryScreen}
+        options={{ headerShown: true, title: '积分变动' }}
+      />
+      <Stack.Screen
+        name="VerifyHistory"
+        component={VerifyHistoryScreen}
+        options={{ headerShown: true, title: '核销记录' }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ headerShown: true, title: '消息通知' }}
+      />
+      <Stack.Screen
+        name="MyReplenishments"
+        component={MyReplenishmentsScreen}
+        options={{ headerShown: true, title: '我的进货单' }}
+      />
+      <Stack.Screen
+        name="Stores"
+        component={StoresScreen}
+        options={{ headerShown: true, title: '门店管理' }}
+      />
+      <Stack.Screen
+        name="StoreDetail"
+        component={StoreDetailScreen}
+        options={{ headerShown: true, title: '门店详情' }}
+      />
+    </Stack.Navigator>
   );
 }

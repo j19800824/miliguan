@@ -1,29 +1,71 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { SectionHeader } from '../../components/SectionHeader';
-import { Check, QR, Scan, Sparkle, X } from '../../components/Icons';
-import { Colors, FontSize, Gradients, Radius, Shadow, Spacing } from '../../constants/theme';
+import {
+  Check,
+  Chart,
+  Clipboard,
+  Package,
+  Sparkle,
+  Trophy,
+  X,
+} from '../../components/Icons';
+import {
+  Colors,
+  FontSize,
+  Gradients,
+  Radius,
+  Shadow,
+  Spacing,
+  numericFont,
+} from '../../constants/theme';
+import { ReplenishmentModal } from '../../components/ReplenishmentModal';
 import type { MockUser } from '../../data/mock';
-import { fetchVerifyRecords, type VerifyRecord } from '../../services/api';
+import {
+  fetchVerifyRecords,
+  fetchTodayStats,
+  type VerifyRecord,
+  type TodayStats,
+} from '../../services/api';
 import { onRealtime } from '../../services/realtime';
 
 interface StoreManagerHomeScreenProps {
   user: MockUser;
-  onScan: () => void;
+  onScan?: () => void;
 }
 
-export function StoreManagerHomeScreen({ user, onScan }: StoreManagerHomeScreenProps) {
+export function StoreManagerHomeScreen({ user }: StoreManagerHomeScreenProps) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
+
   const [records, setRecords] = useState<VerifyRecord[]>([]);
+  const [stats, setStats] = useState<TodayStats>({
+    storeVerifyCount: 0,
+    myVerifyCount: 0,
+    todayPoints: 0,
+  });
+  const [showReplenishment, setShowReplenishment] = useState(false);
 
   useEffect(() => {
     let active = true;
     const reload = () => {
-      fetchVerifyRecords().then((data) => {
-        if (active) setRecords(data);
-      });
+      Promise.all([fetchVerifyRecords(), fetchTodayStats()]).then(
+        ([recs, st]) => {
+          if (!active) return;
+          setRecords(recs);
+          setStats(st);
+        },
+      );
     };
     reload();
     const unsubs = [
@@ -35,6 +77,8 @@ export function StoreManagerHomeScreen({ user, onScan }: StoreManagerHomeScreenP
       unsubs.forEach((u) => u());
     };
   }, []);
+
+  const recentRecords = records.slice(0, 6);
 
   return (
     <ScrollView
@@ -51,93 +95,140 @@ export function StoreManagerHomeScreen({ user, onScan }: StoreManagerHomeScreenP
           <Text style={styles.greeting}>{user.name}</Text>
           <Text style={styles.storeName}>{user.org}</Text>
         </View>
-        {/* Gold gradient points badge */}
-        <LinearGradient
-          colors={Gradients.gold}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={styles.pointsBadge}
+        <TouchableOpacity
+          activeOpacity={0.85}
+          onPress={() => nav.navigate('PointsHistory')}
         >
-          <Sparkle size={14} color={Colors.goldDark} />
-          <View style={styles.pointsTextWrap}>
-            <Text style={styles.pointsNum}>{(user.points ?? 0).toLocaleString()}</Text>
-            <Text style={styles.pointsUnit}>积分</Text>
-          </View>
-        </LinearGradient>
+          <LinearGradient
+            colors={Gradients.gold}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.pointsBadge}
+          >
+            <Sparkle size={14} color={Colors.goldDark} />
+            <View style={styles.pointsTextWrap}>
+              <Text style={styles.pointsNum}>
+                {(user.points ?? 0).toLocaleString()}
+              </Text>
+              <Text style={styles.pointsUnit}>积分</Text>
+            </View>
+          </LinearGradient>
+        </TouchableOpacity>
       </View>
 
-      {/* Today Stats */}
+      {/* Today Stats — real data */}
       <View style={styles.statsCard}>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>38</Text>
+          <Text style={styles.statValue}>{stats.storeVerifyCount}</Text>
           <Text style={styles.statLabel}>今日核销</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>12</Text>
+          <Text style={styles.statValue}>{stats.myVerifyCount}</Text>
           <Text style={styles.statLabel}>本人核销</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Text style={[styles.statValue, { color: Colors.gold }]}>520</Text>
+          <Text style={[styles.statValue, { color: Colors.gold }]}>
+            {stats.todayPoints}
+          </Text>
           <Text style={styles.statLabel}>今日积分</Text>
         </View>
       </View>
 
-      {/* Main Scan CTA — gradient + frosted glass icon */}
-      <TouchableOpacity onPress={onScan} activeOpacity={0.85}>
-        <LinearGradient
-          colors={Gradients.primary}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.scanBtn}
+      {/* Quick Actions */}
+      <View style={styles.quickCard}>
+        <TouchableOpacity
+          style={styles.quickItem}
+          activeOpacity={0.7}
+          onPress={() => nav.navigate('Inventory')}
         >
-          <View style={styles.scanRadialOverlay} />
-          <View style={styles.scanIconWrap}>
-            <Scan size={32} color="#fff" />
+          <View style={[styles.quickIcon, { backgroundColor: `${Colors.primary}14` }]}>
+            <Package size={22} color={Colors.primary} />
           </View>
-          <Text style={styles.scanTitle}>扫码核销</Text>
-          <Text style={styles.scanSub}>扫描商品二维码完成核销</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-
-      {/* Ghost button: scan staff barcode */}
-      <TouchableOpacity style={styles.staffScanBtn} activeOpacity={0.8}>
-        <QR size={20} color={Colors.textSecondary} />
-        <Text style={styles.staffScanText}>扫描员工一维码</Text>
-      </TouchableOpacity>
+          <Text style={styles.quickLabel}>库存查询</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickItem}
+          activeOpacity={0.7}
+          onPress={() => setShowReplenishment(true)}
+        >
+          <View style={[styles.quickIcon, { backgroundColor: `${Colors.gold}14` }]}>
+            <Chart size={22} color={Colors.goldDark} />
+          </View>
+          <Text style={styles.quickLabel}>申请进货</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickItem}
+          activeOpacity={0.7}
+          onPress={() => nav.navigate('MyReplenishments')}
+        >
+          <View style={[styles.quickIcon, { backgroundColor: `${Colors.info}14` }]}>
+            <Clipboard size={22} color={Colors.info} />
+          </View>
+          <Text style={styles.quickLabel}>我的进货单</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.quickItem}
+          activeOpacity={0.7}
+          onPress={() => nav.navigate('VerifyHistory')}
+        >
+          <View style={[styles.quickIcon, { backgroundColor: `${Colors.success}14` }]}>
+            <Trophy size={22} color={Colors.success} />
+          </View>
+          <Text style={styles.quickLabel}>全部核销</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Recent Records */}
-      <SectionHeader title="今日核销记录" action="查看全部" />
-      {records.map((r) => (
-        <View
-          key={r.id}
-          style={[styles.recordRow, r.status === 'fail' && styles.recordRowFail]}
-        >
-          {/* Rounded-square status badge with tinted bg */}
-          <View
-            style={[
-              styles.recordStatus,
-              r.status === 'success' ? styles.statusSuccess : styles.statusFail,
-            ]}
-          >
-            {r.status === 'success'
-              ? <Check size={16} color={Colors.success} />
-              : <X size={16} color={Colors.danger} />
-            }
-          </View>
-          <View style={styles.recordInfo}>
-            <Text style={styles.recordProduct}>{r.product}</Text>
-            <Text style={styles.recordMeta}>{r.time} · {r.staff}</Text>
-          </View>
-          {/* Show pts instead of barcode */}
-          {r.status === 'success' ? (
-            <Text style={styles.recordPts}>+{r.pts}</Text>
-          ) : (
-            <Text style={styles.recordFail}>核销失败</Text>
-          )}
+      <SectionHeader
+        title="今日核销记录"
+        action="查看全部"
+        onAction={() => nav.navigate('VerifyHistory')}
+      />
+      {recentRecords.length === 0 ? (
+        <View style={styles.empty}>
+          <Text style={styles.emptyText}>暂无核销记录</Text>
         </View>
-      ))}
+      ) : (
+        recentRecords.map((r) => (
+          <View
+            key={r.id}
+            style={[styles.recordRow, r.status === 'fail' && styles.recordRowFail]}
+          >
+            <View
+              style={[
+                styles.recordStatus,
+                r.status === 'success' ? styles.statusSuccess : styles.statusFail,
+              ]}
+            >
+              {r.status === 'success' ? (
+                <Check size={16} color={Colors.success} />
+              ) : (
+                <X size={16} color={Colors.danger} />
+              )}
+            </View>
+            <View style={styles.recordInfo}>
+              <Text style={styles.recordProduct}>{r.product}</Text>
+              <Text style={styles.recordMeta}>
+                {r.time} · {r.staff}
+              </Text>
+            </View>
+            {r.status === 'success' ? (
+              <Text style={styles.recordPts}>+{r.pts}</Text>
+            ) : (
+              <Text style={styles.recordFail}>核销失败</Text>
+            )}
+          </View>
+        ))
+      )}
+
+      <ReplenishmentModal
+        visible={showReplenishment}
+        targetLabel="分公司"
+        onClose={() => setShowReplenishment(false)}
+        onSubmitted={() => setShowReplenishment(false)}
+      />
     </ScrollView>
   );
 }
@@ -163,7 +254,7 @@ const styles = StyleSheet.create({
     ...Shadow.card,
   },
   pointsTextWrap: { alignItems: 'center' },
-  pointsNum: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary, fontVariant: ['tabular-nums'] },
+  pointsNum: { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary, ...numericFont },
   pointsUnit: { fontSize: FontSize.xs, color: Colors.textPrimary, opacity: 0.7 },
   statsCard: {
     flexDirection: 'row',
@@ -175,54 +266,30 @@ const styles = StyleSheet.create({
     ...Shadow.card,
   },
   statItem: { flex: 1, alignItems: 'center' },
-  statValue: { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.primary, fontVariant: ['tabular-nums'] },
+  statValue: { fontSize: FontSize.xxl, fontWeight: '800', color: Colors.primary, ...numericFont },
   statLabel: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 4 },
   statDivider: { width: 1, backgroundColor: Colors.border },
-  scanBtn: {
-    borderRadius: Radius.xl,
-    padding: Spacing.xl,
-    alignItems: 'center',
-    overflow: 'hidden',
-    ...Shadow.lift,
-    gap: Spacing.sm,
-  },
-  scanRadialOverlay: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    top: -60,
-    right: -40,
-  },
-  scanIconWrap: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  scanTitle: {
-    fontSize: FontSize.xxl,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: 1,
-  },
-  scanSub: { fontSize: FontSize.sm, color: 'rgba(255,255,255,0.85)' },
-  staffScanBtn: {
+  quickCard: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
+    justifyContent: 'space-between',
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
-    paddingVertical: Spacing.md,
-    borderWidth: 1.5,
+    padding: Spacing.md,
+    borderWidth: 1,
     borderColor: Colors.border,
+    ...Shadow.card,
   },
-  staffScanText: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textSecondary },
+  quickItem: { alignItems: 'center', gap: 6, flex: 1 },
+  quickIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  quickLabel: { fontSize: FontSize.xs, color: Colors.textSecondary, fontWeight: '500' },
+  empty: { padding: Spacing.lg, alignItems: 'center' },
+  emptyText: { fontSize: FontSize.sm, color: Colors.textMuted },
   recordRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -240,7 +307,6 @@ const styles = StyleSheet.create({
     borderLeftColor: Colors.danger,
     backgroundColor: '#FFF8F8',
   },
-  // Rounded-square (not circle) with tinted background
   recordStatus: {
     width: 32,
     height: 32,
@@ -253,6 +319,6 @@ const styles = StyleSheet.create({
   recordInfo: { flex: 1 },
   recordProduct: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
   recordMeta: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
-  recordPts: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.gold, fontVariant: ['tabular-nums'] },
+  recordPts: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.gold, ...numericFont },
   recordFail: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.danger },
 });

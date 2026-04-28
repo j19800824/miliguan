@@ -1,19 +1,26 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Colors } from '../constants/theme';
 import { Chart, Trophy, User } from '../components/Icons';
 import { BossHomeScreen } from '../screens/boss/BossHomeScreen';
 import { SalesStaffRankingScreen } from '../screens/sales-staff/SalesStaffRankingScreen';
 import { ProfileScreen } from '../screens/shared/ProfileScreen';
+import { PointsHistoryScreen } from '../screens/shared/PointsHistoryScreen';
+import { VerifyHistoryScreen } from '../screens/shared/VerifyHistoryScreen';
+import { NotificationsScreen } from '../screens/shared/NotificationsScreen';
+import { BranchListScreen } from '../screens/shared/BranchListScreen';
+import { BranchDetailScreen } from '../screens/shared/BranchDetailScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-interface BossNavigatorProps {
+interface NavProps {
   user: MockUser;
   onLogout: () => void;
 }
 
-export function BossNavigator({ user, onLogout }: BossNavigatorProps) {
+function MainTabs({ user, onLogout }: NavProps) {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -62,5 +69,40 @@ export function BossNavigator({ user, onLogout }: BossNavigatorProps) {
         {() => <ProfileScreen user={user} onLogout={onLogout} />}
       </Tab.Screen>
     </Tab.Navigator>
+  );
+}
+
+export function BossNavigator({ user, onLogout }: NavProps) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs">
+        {() => <MainTabs user={user} onLogout={onLogout} />}
+      </Stack.Screen>
+      <Stack.Screen
+        name="PointsHistory"
+        component={PointsHistoryScreen}
+        options={{ headerShown: true, title: '积分变动' }}
+      />
+      <Stack.Screen
+        name="VerifyHistory"
+        component={VerifyHistoryScreen}
+        options={{ headerShown: true, title: '核销记录' }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ headerShown: true, title: '消息通知' }}
+      />
+      <Stack.Screen
+        name="Branches"
+        component={BranchListScreen}
+        options={{ headerShown: true, title: '全部分公司' }}
+      />
+      <Stack.Screen
+        name="BranchDetail"
+        component={BranchDetailScreen}
+        options={{ headerShown: true, title: '分公司详情' }}
+      />
+    </Stack.Navigator>
   );
 }

@@ -2,6 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { KpiCard } from '../../components/KpiCard';
 import { SectionHeader } from '../../components/SectionHeader';
 import type { ReactElement } from 'react';
@@ -27,17 +28,20 @@ interface QuickAction {
   IconComp: (props: { size?: number; color?: string }) => ReactElement;
   label: string;
   color: string;
+  route: string;
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { IconComp: Package,   label: '积分下单', color: '#E8520B' },
-  { IconComp: Chart,     label: '库存查询', color: '#F5A827' },
-  { IconComp: Clipboard, label: '订单跟踪', color: '#3B82F6' },
-  { IconComp: Users,     label: '门店管理', color: '#22C55E' },
+  { IconComp: Package,   label: '积分下单', color: '#E8520B', route: 'Orders' },
+  { IconComp: Chart,     label: '库存查询', color: '#F5A827', route: 'Inventory' },
+  { IconComp: Clipboard, label: '订单跟踪', color: '#3B82F6', route: 'Orders' },
+  { IconComp: Users,     label: '门店管理', color: '#22C55E', route: 'Stores' },
 ];
 
 export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [stores, setStores] = useState<StoreItem[]>([]);
 
@@ -79,11 +83,24 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
           <Text style={styles.greeting}>你好，{user.name}</Text>
           <Text style={styles.org}>{user.org}</Text>
         </View>
-        {/* Alert badge with Bell icon */}
-        <TouchableOpacity style={styles.alertBadge} activeOpacity={0.7}>
-          <Bell size={13} color={Colors.primary} />
-          <Text style={styles.alertText}>2 待审核</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.alertBadge}
+            activeOpacity={0.7}
+            onPress={() => nav.navigate('Inventory')}
+          >
+            <Bell size={13} color={Colors.primary} />
+            <Text style={styles.alertText}>待审核</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.pointsBadge}
+            activeOpacity={0.85}
+            onPress={() => nav.navigate('PointsHistory')}
+          >
+            <Sparkle size={14} color={Colors.goldDark} />
+            <Text style={styles.pointsBadgeText}>积分</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Points Balance Card — LinearGradient */}
@@ -110,7 +127,11 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
             <Text style={styles.pointsValue}>{(user.points ?? 0).toLocaleString()}</Text>
             <Text style={styles.pointsSub}>本月消耗 23,500 · 回调 8,200</Text>
           </View>
-          <TouchableOpacity style={styles.orderBtn} activeOpacity={0.85}>
+          <TouchableOpacity
+            style={styles.orderBtn}
+            activeOpacity={0.85}
+            onPress={() => nav.navigate('Orders')}
+          >
             <Package size={14} color={Colors.textPrimary} />
             <Text style={styles.orderBtnText}>立即下单</Text>
           </TouchableOpacity>
@@ -119,8 +140,13 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
 
       {/* Quick Actions — SVG icons with per-color tinted bg */}
       <View style={styles.quickCard}>
-        {QUICK_ACTIONS.map(({ IconComp, label, color }) => (
-          <TouchableOpacity key={label} style={styles.quickItem} activeOpacity={0.7}>
+        {QUICK_ACTIONS.map(({ IconComp, label, color, route }) => (
+          <TouchableOpacity
+            key={label}
+            style={styles.quickItem}
+            activeOpacity={0.7}
+            onPress={() => nav.navigate(route)}
+          >
             <View style={[styles.quickIcon, { backgroundColor: `${color}14` }]}>
               <IconComp size={22} color={color} />
             </View>
@@ -146,7 +172,11 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
       </View>
 
       {/* Inventory */}
-      <SectionHeader title="库存概览" action="查看详情" />
+      <SectionHeader
+        title="库存概览"
+        action="查看详情"
+        onAction={() => nav.navigate('Inventory')}
+      />
       {inventory.map((inv) => (
         <View
           key={inv.sku}
@@ -173,9 +203,18 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
       ))}
 
       {/* Stores */}
-      <SectionHeader title="门店状态" action="管理门店" />
+      <SectionHeader
+        title="门店状态"
+        action="管理门店"
+        onAction={() => nav.navigate('Stores')}
+      />
       {stores.map((s) => (
-        <View key={s.id} style={styles.storeRow}>
+        <TouchableOpacity
+          key={s.id}
+          style={styles.storeRow}
+          activeOpacity={0.85}
+          onPress={() => nav.navigate('StoreDetail', { id: s.id, name: s.name })}
+        >
           {/* Store SVG icon in semantic-colored container */}
           <View style={[
             styles.storeIconWrap,
@@ -194,7 +233,7 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
             <Text style={styles.storeVerifyLabel}>今日核销</Text>
           </View>
           <Chevron size={16} color={Colors.textMuted} />
-        </View>
+        </TouchableOpacity>
       ))}
     </ScrollView>
   );
@@ -211,6 +250,7 @@ const styles = StyleSheet.create({
   },
   greeting: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary },
   org: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   alertBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -223,6 +263,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.primary,
   },
   alertText: { fontSize: FontSize.sm, color: Colors.primary, fontWeight: '700' },
+  pointsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    height: 28,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.bgWarm,
+    borderWidth: 1,
+    borderColor: Colors.gold,
+  },
+  pointsBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.goldDark },
 
   // Points card (gradient)
   pointsCard: {

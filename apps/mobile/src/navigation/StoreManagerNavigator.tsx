@@ -1,22 +1,27 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View } from 'react-native';
 import { Colors } from '../constants/theme';
 import { Home, Package, Scan, Trophy, User } from '../components/Icons';
 import { StoreManagerHomeScreen } from '../screens/store-manager/StoreManagerHomeScreen';
 import { ScanScreen } from '../screens/store-manager/ScanScreen';
-import { InventoryScreen } from '../screens/shared/InventoryScreen';
 import { SalesStaffRankingScreen } from '../screens/sales-staff/SalesStaffRankingScreen';
 import { ProfileScreen } from '../screens/shared/ProfileScreen';
+import { InventoryScreen } from '../screens/shared/InventoryScreen';
+import { PointsHistoryScreen } from '../screens/shared/PointsHistoryScreen';
+import { VerifyHistoryScreen } from '../screens/shared/VerifyHistoryScreen';
+import { NotificationsScreen } from '../screens/shared/NotificationsScreen';
+import { MyReplenishmentsScreen } from '../screens/shared/MyReplenishmentsScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-interface StoreManagerNavigatorProps {
+interface NavProps {
   user: MockUser;
   onLogout: () => void;
 }
 
-// Raised scan button for the center tab
 function ScanTabIcon({ focused }: { focused: boolean }) {
   return (
     <View
@@ -40,7 +45,7 @@ function ScanTabIcon({ focused }: { focused: boolean }) {
   );
 }
 
-export function StoreManagerNavigator({ user, onLogout }: StoreManagerNavigatorProps) {
+function MainTabs({ user, onLogout }: NavProps) {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -116,5 +121,35 @@ export function StoreManagerNavigator({ user, onLogout }: StoreManagerNavigatorP
         {() => <ProfileScreen user={user} onLogout={onLogout} />}
       </Tab.Screen>
     </Tab.Navigator>
+  );
+}
+
+export function StoreManagerNavigator({ user, onLogout }: NavProps) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs">
+        {() => <MainTabs user={user} onLogout={onLogout} />}
+      </Stack.Screen>
+      <Stack.Screen
+        name="PointsHistory"
+        component={PointsHistoryScreen}
+        options={{ headerShown: true, title: '积分变动' }}
+      />
+      <Stack.Screen
+        name="VerifyHistory"
+        component={VerifyHistoryScreen}
+        options={{ headerShown: true, title: '核销记录' }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ headerShown: true, title: '消息通知' }}
+      />
+      <Stack.Screen
+        name="MyReplenishments"
+        component={MyReplenishmentsScreen}
+        options={{ headerShown: true, title: '我的进货单' }}
+      />
+    </Stack.Navigator>
   );
 }

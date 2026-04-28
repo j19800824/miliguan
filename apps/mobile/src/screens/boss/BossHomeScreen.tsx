@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { KpiCard } from '../../components/KpiCard';
 import { SectionHeader } from '../../components/SectionHeader';
 import { AlertDot, Bell, Check, Coin, Flame, Package, Sparkle } from '../../components/Icons';
@@ -25,6 +26,8 @@ interface BossHomeScreenProps {
 
 export function BossHomeScreen({ user }: BossHomeScreenProps) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const [period, setPeriod] = useState<Period>('月榜');
   const [kpi, setKpi] = useState<Kpi | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -69,46 +72,81 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
           <Text style={styles.greeting}>你好，{user.name} 👋</Text>
           <Text style={styles.orgName}>{user.org}</Text>
         </View>
-        <TouchableOpacity style={styles.bellWrap} activeOpacity={0.7}>
-          <Bell size={20} color={Colors.primary} />
-          <View style={styles.bellBadge}>
-            <Text style={styles.bellBadgeText}>3</Text>
-          </View>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            style={styles.bellWrap}
+            activeOpacity={0.7}
+            onPress={() => nav.navigate('Notifications')}
+          >
+            <Bell size={20} color={Colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.pointsBadge}
+            activeOpacity={0.85}
+            onPress={() => nav.navigate('PointsHistory')}
+          >
+            <Sparkle size={14} color={Colors.goldDark} />
+            <Text style={styles.pointsBadgeText}>积分</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* KPI Row 1 */}
+      {/* KPI Row 1 — tap to drill */}
       <View style={styles.kpiRow}>
-        <KpiCard
-          label="总销售额"
-          labelIcon={<Coin size={12} color="rgba(255,255,255,0.85)" />}
-          value={`¥${kpi.totalSales}`}
-          sub={kpi.salesGrowth}
-          accent
-          trend="up"
-        />
-        <KpiCard
-          label="总核销量"
-          labelIcon={<Check size={12} color={Colors.textSecondary} />}
-          value={kpi.totalVerify}
-          sub={kpi.verifyGrowth}
-          trend="up"
-        />
+        <TouchableOpacity
+          style={{ flex: 1 }}
+          activeOpacity={0.85}
+          onPress={() => nav.navigate('Branches')}
+        >
+          <KpiCard
+            label="总销售额"
+            labelIcon={<Coin size={12} color="rgba(255,255,255,0.85)" />}
+            value={`¥${kpi.totalSales}`}
+            sub={kpi.salesGrowth}
+            accent
+            trend="up"
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{ flex: 1 }}
+          activeOpacity={0.85}
+          onPress={() => nav.navigate('VerifyHistory')}
+        >
+          <KpiCard
+            label="总核销量"
+            labelIcon={<Check size={12} color={Colors.textSecondary} />}
+            value={kpi.totalVerify}
+            sub={kpi.verifyGrowth}
+            trend="up"
+          />
+        </TouchableOpacity>
       </View>
 
       {/* KPI Row 2 */}
       <View style={styles.kpiRow}>
-        <KpiCard
-          label="积分回调"
-          labelIcon={<Sparkle size={12} color={Colors.goldDark} />}
-          value={kpi.totalPoints}
-          gold
-        />
-        <KpiCard
-          label="库存总量"
-          labelIcon={<Package size={12} color={Colors.textSecondary} />}
-          value={kpi.totalInventory}
-        />
+        <TouchableOpacity
+          style={{ flex: 1 }}
+          activeOpacity={0.85}
+          onPress={() => nav.navigate('PointsHistory')}
+        >
+          <KpiCard
+            label="积分回调"
+            labelIcon={<Sparkle size={12} color={Colors.goldDark} />}
+            value={kpi.totalPoints}
+            gold
+          />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{ flex: 1 }}
+          activeOpacity={0.85}
+          onPress={() => nav.navigate('Branches')}
+        >
+          <KpiCard
+            label="库存总量"
+            labelIcon={<Package size={12} color={Colors.textSecondary} />}
+            value={kpi.totalInventory}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* Period Selector */}
@@ -126,12 +164,21 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
       </View>
 
       {/* Branch Ranking */}
-      <SectionHeader title={`分公司 ${period}`} action="查看全部" />
+      <SectionHeader
+        title={`分公司 ${period}`}
+        action="查看全部"
+        onAction={() => nav.navigate('Branches')}
+      />
       {branches.map((b) => {
         const isTop3 = b.rank <= 3;
         const rankColor = isTop3 ? RANK_COLORS[b.rank - 1] : Colors.textSecondary;
         return (
-          <View key={b.id} style={styles.branchCard}>
+          <TouchableOpacity
+            key={b.id}
+            style={styles.branchCard}
+            activeOpacity={0.85}
+            onPress={() => nav.navigate('BranchDetail', { id: b.id, name: b.name })}
+          >
             {/* Square rank bubble */}
             <View
               style={[
@@ -163,7 +210,7 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
                 {b.trend === 'up' ? '↑' : '↓'}
               </Text>
             </View>
-          </View>
+          </TouchableOpacity>
         );
       })}
 
@@ -196,6 +243,7 @@ const styles = StyleSheet.create({
   },
   greeting: { fontSize: FontSize.xl, fontWeight: '700', color: Colors.textPrimary },
   orgName: { fontSize: FontSize.sm, color: Colors.textSecondary, marginTop: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   bellWrap: {
     width: 44,
     height: 44,
@@ -207,18 +255,18 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     ...Shadow.card,
   },
-  bellBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Colors.danger,
+  pointsBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    height: 32,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.bgWarm,
+    borderWidth: 1,
+    borderColor: Colors.gold,
   },
-  bellBadgeText: { fontSize: 9, color: '#fff', fontWeight: '700' },
+  pointsBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.goldDark },
   kpiRow: { flexDirection: 'row', gap: Spacing.md },
   periodRow: {
     flexDirection: 'row',

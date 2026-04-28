@@ -1,4 +1,5 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View } from 'react-native';
 import { Colors } from '../constants/theme';
 import { Home, Scan, Trophy, User } from '../components/Icons';
@@ -6,16 +7,19 @@ import { SalesStaffHomeScreen } from '../screens/sales-staff/SalesStaffHomeScree
 import { ScanScreen } from '../screens/store-manager/ScanScreen';
 import { SalesStaffRankingScreen } from '../screens/sales-staff/SalesStaffRankingScreen';
 import { ProfileScreen } from '../screens/shared/ProfileScreen';
+import { PointsHistoryScreen } from '../screens/shared/PointsHistoryScreen';
+import { VerifyHistoryScreen } from '../screens/shared/VerifyHistoryScreen';
+import { NotificationsScreen } from '../screens/shared/NotificationsScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
-interface SalesStaffNavigatorProps {
+interface NavProps {
   user: MockUser;
   onLogout: () => void;
 }
 
-// Raised scan button for the center tab
 function ScanTabIcon({ focused }: { focused: boolean }) {
   return (
     <View
@@ -39,7 +43,7 @@ function ScanTabIcon({ focused }: { focused: boolean }) {
   );
 }
 
-export function SalesStaffNavigator({ user, onLogout }: SalesStaffNavigatorProps) {
+function MainTabs({ user, onLogout }: NavProps) {
   return (
     <Tab.Navigator
       screenOptions={{
@@ -104,5 +108,30 @@ export function SalesStaffNavigator({ user, onLogout }: SalesStaffNavigatorProps
         {() => <ProfileScreen user={user} onLogout={onLogout} />}
       </Tab.Screen>
     </Tab.Navigator>
+  );
+}
+
+export function SalesStaffNavigator({ user, onLogout }: NavProps) {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs">
+        {() => <MainTabs user={user} onLogout={onLogout} />}
+      </Stack.Screen>
+      <Stack.Screen
+        name="PointsHistory"
+        component={PointsHistoryScreen}
+        options={{ headerShown: true, title: '积分变动' }}
+      />
+      <Stack.Screen
+        name="VerifyHistory"
+        component={VerifyHistoryScreen}
+        options={{ headerShown: true, title: '核销记录' }}
+      />
+      <Stack.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{ headerShown: true, title: '消息通知' }}
+      />
+    </Stack.Navigator>
   );
 }
