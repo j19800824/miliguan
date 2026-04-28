@@ -1,3 +1,5 @@
+// Filter harmless dev-mode noise BEFORE other imports so it catches early.
+import './src/utils/dev-noise-filter';
 import { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -68,11 +70,15 @@ export default function App() {
 
   if (!fontsLoaded || !authReady) return null;
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    // Snap UI to login screen immediately. The server sign-out + push
+    // unregister are best-effort cleanup that must not block the user
+    // (RN fetch has no default timeout, so a stalled request would
+    // otherwise leave the logout button feeling broken).
     stopRealtime();
-    await unregisterPushToken();
-    await apiLogout();
     setUser(null);
+    void unregisterPushToken().catch(() => {});
+    void apiLogout().catch(() => {});
   };
 
   if (!user) {
