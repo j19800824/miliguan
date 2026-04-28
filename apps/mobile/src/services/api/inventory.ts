@@ -25,3 +25,19 @@ export async function fetchStoreInventory(): Promise<StoreInventoryItem[]> {
   if (shouldUseMocks()) return [];
   return getApiClient()<StoreInventoryItem[]>('/api/mobile/inventory/store');
 }
+
+export interface InventoryWarning {
+  id: string;
+  companyId: string;
+  companyName: string;
+  productName: string;
+  skuCode: string;
+  spec: string;
+  quantity: number;
+  safetyStock: number;
+}
+
+export async function fetchInventoryWarnings(): Promise<InventoryWarning[]> {
+  if (shouldUseMocks()) return [];
+  return getApiClient()<InventoryWarning[]>('/api/mobile/inventory/warnings');
+}

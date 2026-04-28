@@ -10,8 +10,10 @@ import type { MockUser } from '../../data/mock';
 import {
   fetchKpi,
   fetchBranches,
+  fetchInventoryWarnings,
   type Kpi,
   type Branch,
+  type InventoryWarning,
 } from '../../services/api';
 import { onRealtime } from '../../services/realtime';
 
@@ -31,15 +33,19 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
   const [period, setPeriod] = useState<Period>('月榜');
   const [kpi, setKpi] = useState<Kpi | null>(null);
   const [branches, setBranches] = useState<Branch[]>([]);
+  const [warnings, setWarnings] = useState<InventoryWarning[]>([]);
 
   useEffect(() => {
     let active = true;
     const reload = () => {
-      Promise.all([fetchKpi(), fetchBranches()]).then(([k, b]) => {
-        if (!active) return;
-        setKpi(k);
-        setBranches(b);
-      });
+      Promise.all([fetchKpi(), fetchBranches(), fetchInventoryWarnings()]).then(
+        ([k, b, w]) => {
+          if (!active) return;
+          setKpi(k);
+          setBranches(b);
+          setWarnings(w);
+        },
+      );
     };
     reload();
     const unsubs = [
@@ -214,20 +220,34 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
         );
       })}
 
-      {/* Warning Cards */}
-      <SectionHeader title="库存预警" />
-      <View style={[styles.warnCard, styles.warnDanger]}>
-        <View style={[styles.warnIconWrap, { backgroundColor: Colors.dangerBg }]}>
-          <AlertDot size={18} color={Colors.danger} />
-        </View>
-        <Text style={styles.warnText}>华北分公司 · 低GI免煮米 2kg 库存仅剩 86 件</Text>
-      </View>
-      <View style={[styles.warnCard, styles.warnWarning]}>
-        <View style={[styles.warnIconWrap, { backgroundColor: Colors.warningBg }]}>
-          <Flame size={18} color={Colors.warning} />
-        </View>
-        <Text style={styles.warnText}>西北分公司 · 核销率本月下降 18%，建议关注</Text>
-      </View>
+      {/* Warning Cards — real data from /api/mobile/inventory/warnings */}
+      {warnings.length > 0 && (
+        <>
+          <SectionHeader
+            title="库存预警"
+            action="查看全部"
+            onAction={() => nav.navigate('Branches')}
+          />
+          {warnings.map((w) => (
+            <TouchableOpacity
+              key={w.id}
+              style={[styles.warnCard, styles.warnDanger]}
+              activeOpacity={0.85}
+              onPress={() =>
+                nav.navigate('BranchDetail', { id: w.companyId, name: w.companyName })
+              }
+            >
+              <View style={[styles.warnIconWrap, { backgroundColor: Colors.dangerBg }]}>
+                <AlertDot size={18} color={Colors.danger} />
+              </View>
+              <Text style={styles.warnText}>
+                {w.companyName} · {w.productName}
+                {w.spec ? ` ${w.spec}` : ''} 仅剩 {w.quantity} 件（安全库存 {w.safetyStock}）
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </>
+      )}
     </ScrollView>
   );
 }

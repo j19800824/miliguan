@@ -15,6 +15,8 @@ import { MyReplenishmentsScreen } from '../screens/shared/MyReplenishmentsScreen
 import { MyOrdersScreen } from '../screens/shared/MyOrdersScreen';
 import { SettingsScreen } from '../screens/shared/SettingsScreen';
 import { HelpScreen } from '../screens/shared/HelpScreen';
+import { ChangePasswordScreen } from '../screens/shared/ChangePasswordScreen';
+import { OrderDetailScreen } from '../screens/shared/OrderDetailScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
@@ -167,6 +169,16 @@ export function StoreManagerNavigator({ user, onLogout }: NavProps) {
         name="Help"
         component={HelpScreen}
         options={{ headerShown: true, title: '帮助与反馈' }}
+      />
+      <Stack.Screen
+        name="ChangePassword"
+        component={ChangePasswordScreen}
+        options={{ headerShown: true, title: '修改密码' }}
+      />
+      <Stack.Screen
+        name="OrderDetail"
+        component={OrderDetailScreen}
+        options={{ headerShown: true, title: '订单详情' }}
       />
     </Stack.Navigator>
   );

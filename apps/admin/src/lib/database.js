@@ -9173,3 +9173,133 @@ export async function getStoreTodayStats(storeId, staffName) {
     todayPoints: Number(storeRow?.pts ?? 0)
   };
 }
+
+/* ============================================================
+ * Stage 7: Self-service password change + order detail + warnings
+ * ============================================================ */
+
+export async function changeMobilePassword(userId, currentPlain, newPlain) {
+  if (!userId) throw new Error('未登录');
+  if (!newPlain || newPlain.length < 6) {
+    throw new Error('新密码长度至少 6 位');
+  }
+  await initializeDatabase();
+  const row = (
+    await query(`SELECT password FROM admin_staff WHERE id = $1`, [Number(userId)])
+  ).rows[0];
+  if (!row) throw new Error('账号不存在');
+  const ok = await verifyPassword(currentPlain ?? '', row.password);
+  if (!ok) throw new Error('当前密码不正确');
+  const hashed = await hashPassword(newPlain);
+  await query(
+    `UPDATE admin_staff SET password = $2, updated_at = $3 WHERE id = $1`,
+    [Number(userId), hashed, now()]
+  );
+  return { ok: true };
+}
+
+export async function getMemberOrderDetail(id, user) {
+  if (!id) return null;
+  await initializeDatabase();
+  // Accept either numeric id or order_no string (mobile list returns order_no as id).
+  const lookup = String(id);
+  const isNumeric = /^\d+$/.test(lookup);
+  const order = (
+    await query(
+      `
+        SELECT mo.id, mo.order_no, mo.status, mo.customer_type,
+               mo.member_name, mo.member_phone, mo.sales_staff_name,
+               mo.total_amount, mo.created_at, mo.company_id, mo.store_id,
+               c.name AS company_name, cs.name AS store_name
+        FROM member_orders mo
+        INNER JOIN companies c ON c.id = mo.company_id
+        LEFT JOIN company_stores cs ON cs.id = mo.store_id
+        WHERE ${isNumeric ? 'mo.id = $1' : 'mo.order_no = $1'}
+      `,
+      [isNumeric ? Number(lookup) : lookup]
+    )
+  ).rows[0];
+  if (!order) return null;
+  if (user?.companyId && String(order.company_id) !== String(user.companyId)) {
+    throw new Error('无权查看该订单');
+  }
+  const items = (
+    await query(
+      `
+        SELECT moi.id, moi.quantity, moi.unit_price, moi.point_rebate_base,
+               moi.writeoff_status,
+               ps.sku_code, ps.spec, ps.unit, p.name AS product_name
+        FROM member_order_items moi
+        INNER JOIN product_skus ps ON ps.id = moi.sku_id
+        INNER JOIN products p ON p.id = ps.product_id
+        WHERE moi.member_order_id = $1
+        ORDER BY moi.id
+      `,
+      [Number(id)]
+    )
+  ).rows;
+  return {
+    id: String(order.id),
+    orderNo: order.order_no,
+    status: order.status,
+    customerType: order.customer_type,
+    memberName: order.member_name,
+    memberPhone: order.member_phone,
+    salesStaffName: order.sales_staff_name,
+    totalAmount: Number(order.total_amount ?? 0),
+    createdAt:
+      order.created_at instanceof Date
+        ? order.created_at.toISOString()
+        : String(order.created_at ?? ''),
+    companyName: order.company_name,
+    storeName: order.store_name ?? '',
+    items: items.map((it) => ({
+      id: String(it.id),
+      productName: it.product_name,
+      skuCode: it.sku_code,
+      spec: it.spec,
+      unit: it.unit,
+      quantity: Number(it.quantity ?? 0),
+      unitPrice: Number(it.unit_price ?? 0),
+      pointsRebate: Number(it.point_rebate_base ?? 0),
+      writeoffStatus: it.writeoff_status
+    }))
+  };
+}
+
+export async function getInventoryWarnings(companyId) {
+  await initializeDatabase();
+  const params = [];
+  let scope = 'ci.safety_stock > 0 AND ci.quantity <= ci.safety_stock AND ci.delete_status = \'正常\'';
+  if (companyId) {
+    params.push(Number(companyId));
+    scope += ` AND ci.company_id = $${params.length}`;
+  }
+  const rows = (
+    await query(
+      `
+        SELECT ci.id, ci.company_id, ci.sku_id, ci.quantity, ci.safety_stock,
+               c.name AS company_name,
+               ps.sku_code, ps.spec, p.name AS product_name
+        FROM company_inventory ci
+        INNER JOIN companies c ON c.id = ci.company_id
+        INNER JOIN product_skus ps ON ps.id = ci.sku_id
+        INNER JOIN products p ON p.id = ps.product_id
+        WHERE ${scope}
+        ORDER BY (ci.quantity::float / NULLIF(ci.safety_stock, 0)::float) ASC, ci.company_id
+        LIMIT 20
+      `,
+      params
+    )
+  ).rows;
+  return rows.map((r) => ({
+    id: String(r.id),
+    companyId: String(r.company_id),
+    companyName: r.company_name,
+    productName: r.product_name,
+    skuCode: r.sku_code,
+    spec: r.spec ?? '',
+    quantity: Number(r.quantity ?? 0),
+    safetyStock: Number(r.safety_stock ?? 0)
+  }));
+}

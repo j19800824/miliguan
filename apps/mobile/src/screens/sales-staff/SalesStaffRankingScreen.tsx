@@ -2,6 +2,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { RankingRow } from '../../components/RankingRow';
 import { Trophy } from '../../components/Icons';
 import { Colors, FontSize, Gradients, Radius, Spacing } from '../../constants/theme';
@@ -18,6 +19,8 @@ const PERIOD_TO_API: Record<Period, 'daily' | 'monthly'> = {
 
 export function SalesStaffRankingScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string) => void };
   const [period, setPeriod] = useState<Period>('日榜');
   const [ranking, setRanking] = useState<RankingEntry[]>([]);
 
@@ -94,13 +97,18 @@ export function SalesStaffRankingScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
-          <RankingRow
-            rank={item.rank}
-            name={item.name}
-            org={item.org}
-            points={item.points}
-            isMe={item.isMe}
-          />
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => nav.navigate('PointsHistory')}
+          >
+            <RankingRow
+              rank={item.rank}
+              name={item.name}
+              org={item.org}
+              points={item.points}
+              isMe={item.isMe}
+            />
+          </TouchableOpacity>
         )}
       />
     </View>

@@ -1,8 +1,10 @@
 import { useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -29,8 +31,18 @@ export function ScanScreen() {
   const [state, setState] = useState<ScanState>('scanning');
   const [result, setResult] = useState<VerifyScanResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualCode, setManualCode] = useState('');
   // Throttle: avoid spamming the API while a barcode lingers in frame.
   const inFlightRef = useRef(false);
+
+  const handleManualSubmit = () => {
+    const code = manualCode.trim();
+    if (!code) return;
+    setManualOpen(false);
+    setManualCode('');
+    void performScan(code);
+  };
 
   const performScan = async (barcode: string) => {
     if (inFlightRef.current) return;
@@ -107,8 +119,62 @@ export function ScanScreen() {
     >
       <View style={styles.header}>
         <Text style={styles.headerTitle}>扫码核销</Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity
+          testID="scan-manual-input"
+          style={styles.manualBtn}
+          onPress={() => setManualOpen(true)}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.manualBtnText}>手动</Text>
+        </TouchableOpacity>
       </View>
+
+      <Modal
+        visible={manualOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setManualOpen(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>手动输入条码</Text>
+            <TextInput
+              testID="scan-manual-input-text"
+              value={manualCode}
+              onChangeText={setManualCode}
+              placeholder="请输入商品条码 / 二维码"
+              placeholderTextColor={Colors.textMuted}
+              style={styles.modalInput}
+              keyboardType="numeric"
+              autoFocus
+            />
+            <View style={styles.modalRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalBtnGhost]}
+                onPress={() => {
+                  setManualOpen(false);
+                  setManualCode('');
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.modalBtnGhostText}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.modalBtn,
+                  styles.modalBtnPrimary,
+                  !manualCode.trim() && styles.modalBtnDisabled,
+                ]}
+                onPress={handleManualSubmit}
+                disabled={!manualCode.trim()}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.modalBtnPrimaryText}>提交核销</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <View style={styles.viewfinder}>
         {/* Real camera */}
@@ -228,6 +294,55 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
   },
   headerTitle: { fontSize: FontSize.xl, fontWeight: '700', color: '#fff' },
+  manualBtn: {
+    paddingHorizontal: 14,
+    height: 32,
+    borderRadius: Radius.full,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  manualBtnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '700' },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
+    gap: Spacing.md,
+    ...Shadow.lift,
+  },
+  modalTitle: { fontSize: FontSize.lg, fontWeight: '700', color: Colors.textPrimary },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+    fontSize: FontSize.md,
+    color: Colors.textPrimary,
+    backgroundColor: Colors.background,
+  },
+  modalRow: { flexDirection: 'row', gap: Spacing.sm },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+  },
+  modalBtnGhost: { backgroundColor: Colors.surfaceSunken, borderWidth: 1, borderColor: Colors.border },
+  modalBtnGhostText: { color: Colors.textSecondary, fontSize: FontSize.md, fontWeight: '700' },
+  modalBtnPrimary: { backgroundColor: Colors.primary },
+  modalBtnPrimaryText: { color: '#fff', fontSize: FontSize.md, fontWeight: '700' },
+  modalBtnDisabled: { backgroundColor: Colors.textMuted, opacity: 0.6 },
 
   // Permission screen
   permTitle: {

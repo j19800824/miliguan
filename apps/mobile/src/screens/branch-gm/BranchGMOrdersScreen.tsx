@@ -5,6 +5,7 @@ import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme
 import { fetchOrders, type Order } from '../../services/api';
 import { NewOrderModal } from '../../components/NewOrderModal';
 import { onRealtime } from '../../services/realtime';
+import { useNavigation } from '@react-navigation/native';
 
 const TABS = ['全部', '待确认', '已完成'] as const;
 type Tab = typeof TABS[number];
@@ -17,6 +18,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function BranchGMOrdersScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const [tab, setTab] = useState<Tab>('全部');
   const [orders, setOrders] = useState<Order[]>([]);
   const [modalVisible, setModalVisible] = useState(false);
@@ -71,7 +74,11 @@ export function BranchGMOrdersScreen() {
         contentContainerStyle={styles.list}
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
-          <View style={styles.orderCard}>
+          <TouchableOpacity
+            style={styles.orderCard}
+            activeOpacity={0.85}
+            onPress={() => nav.navigate('OrderDetail', { id: item.id })}
+          >
             <View style={styles.orderHeader}>
               <Text style={styles.orderId}>{item.id}</Text>
               <View style={[styles.statusBadge, { backgroundColor: `${STATUS_COLOR[item.status]}20` }]}>
@@ -91,7 +98,7 @@ export function BranchGMOrdersScreen() {
                 <Text style={styles.pointsValue}>{item.points.toLocaleString()}</Text>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
