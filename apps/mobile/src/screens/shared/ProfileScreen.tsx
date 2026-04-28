@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { pickAndUploadAvatar } from '../../services/upload';
 import {
   Bell,
@@ -57,18 +58,21 @@ interface MenuItem {
   sub: string;
   color: string;
   badge?: string;
+  route: string;
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { IconComp: Clipboard, label: '我的订单',  sub: '查看积分订单记录',   color: Colors.primary },
-  { IconComp: Chart,     label: '积分明细',  sub: '积分获取与消费记录', color: Colors.gold },
-  { IconComp: Bell,      label: '消息通知',  sub: '系统通知与提醒',     color: Colors.info, badge: '2' },
-  { IconComp: Settings,  label: '设置',      sub: '账号与应用设置',     color: Colors.textSecondary },
-  { IconComp: Help,      label: '帮助与反馈', sub: '使用帮助与意见反馈', color: Colors.warning },
+  { IconComp: Clipboard, label: '我的订单',  sub: '查看积分订单记录',   color: Colors.primary,        route: 'MyOrders' },
+  { IconComp: Chart,     label: '积分明细',  sub: '积分获取与消费记录', color: Colors.gold,           route: 'PointsHistory' },
+  { IconComp: Bell,      label: '消息通知',  sub: '系统通知与提醒',     color: Colors.info,           route: 'Notifications' },
+  { IconComp: Settings,  label: '设置',      sub: '账号与应用设置',     color: Colors.textSecondary, route: 'Settings' },
+  { IconComp: Help,      label: '帮助与反馈', sub: '使用帮助与意见反馈', color: Colors.warning,        route: 'Help' },
 ];
 
 export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const roleColor = ROLE_COLOR[user.role];
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
     (user as { avatarUrl?: string }).avatarUrl || null,
@@ -153,6 +157,7 @@ export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
             key={item.label}
             style={[styles.menuRow, i < MENU_ITEMS.length - 1 && styles.menuRowBorder]}
             activeOpacity={0.7}
+            onPress={() => nav.navigate(item.route)}
           >
             {/* Per-item color tinted icon bg */}
             <View style={[styles.menuIconWrap, { backgroundColor: `${item.color}14` }]}>

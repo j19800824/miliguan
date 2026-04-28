@@ -13,6 +13,9 @@ import { NotificationsScreen } from '../screens/shared/NotificationsScreen';
 import { MyReplenishmentsScreen } from '../screens/shared/MyReplenishmentsScreen';
 import { StoresScreen } from '../screens/shared/StoresScreen';
 import { StoreDetailScreen } from '../screens/shared/StoreDetailScreen';
+import { MyOrdersScreen } from '../screens/shared/MyOrdersScreen';
+import { SettingsScreen } from '../screens/shared/SettingsScreen';
+import { HelpScreen } from '../screens/shared/HelpScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
@@ -131,6 +134,21 @@ export function BranchGMNavigator({ user, onLogout }: NavProps) {
         name="StoreDetail"
         component={StoreDetailScreen}
         options={{ headerShown: true, title: '门店详情' }}
+      />
+      <Stack.Screen
+        name="MyOrders"
+        component={MyOrdersScreen}
+        options={{ headerShown: true, title: '我的订单' }}
+      />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ headerShown: true, title: '设置' }}
+      />
+      <Stack.Screen
+        name="Help"
+        component={HelpScreen}
+        options={{ headerShown: true, title: '帮助与反馈' }}
       />
     </Stack.Navigator>
   );

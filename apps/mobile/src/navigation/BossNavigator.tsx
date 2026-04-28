@@ -10,6 +10,9 @@ import { VerifyHistoryScreen } from '../screens/shared/VerifyHistoryScreen';
 import { NotificationsScreen } from '../screens/shared/NotificationsScreen';
 import { BranchListScreen } from '../screens/shared/BranchListScreen';
 import { BranchDetailScreen } from '../screens/shared/BranchDetailScreen';
+import { MyOrdersScreen } from '../screens/shared/MyOrdersScreen';
+import { SettingsScreen } from '../screens/shared/SettingsScreen';
+import { HelpScreen } from '../screens/shared/HelpScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
@@ -102,6 +105,21 @@ export function BossNavigator({ user, onLogout }: NavProps) {
         name="BranchDetail"
         component={BranchDetailScreen}
         options={{ headerShown: true, title: '分公司详情' }}
+      />
+      <Stack.Screen
+        name="MyOrders"
+        component={MyOrdersScreen}
+        options={{ headerShown: true, title: '我的订单' }}
+      />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ headerShown: true, title: '设置' }}
+      />
+      <Stack.Screen
+        name="Help"
+        component={HelpScreen}
+        options={{ headerShown: true, title: '帮助与反馈' }}
       />
     </Stack.Navigator>
   );

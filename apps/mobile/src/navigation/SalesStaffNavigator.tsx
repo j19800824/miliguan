@@ -10,6 +10,9 @@ import { ProfileScreen } from '../screens/shared/ProfileScreen';
 import { PointsHistoryScreen } from '../screens/shared/PointsHistoryScreen';
 import { VerifyHistoryScreen } from '../screens/shared/VerifyHistoryScreen';
 import { NotificationsScreen } from '../screens/shared/NotificationsScreen';
+import { MyOrdersScreen } from '../screens/shared/MyOrdersScreen';
+import { SettingsScreen } from '../screens/shared/SettingsScreen';
+import { HelpScreen } from '../screens/shared/HelpScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
@@ -131,6 +134,21 @@ export function SalesStaffNavigator({ user, onLogout }: NavProps) {
         name="Notifications"
         component={NotificationsScreen}
         options={{ headerShown: true, title: '消息通知' }}
+      />
+      <Stack.Screen
+        name="MyOrders"
+        component={MyOrdersScreen}
+        options={{ headerShown: true, title: '我的订单' }}
+      />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ headerShown: true, title: '设置' }}
+      />
+      <Stack.Screen
+        name="Help"
+        component={HelpScreen}
+        options={{ headerShown: true, title: '帮助与反馈' }}
       />
     </Stack.Navigator>
   );
