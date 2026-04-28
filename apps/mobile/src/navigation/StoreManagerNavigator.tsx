@@ -1,9 +1,10 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { View } from 'react-native';
 import { Colors } from '../constants/theme';
-import { Home, Scan, Trophy, User } from '../components/Icons';
+import { Home, Package, Scan, Trophy, User } from '../components/Icons';
 import { StoreManagerHomeScreen } from '../screens/store-manager/StoreManagerHomeScreen';
 import { ScanScreen } from '../screens/store-manager/ScanScreen';
+import { InventoryScreen } from '../screens/shared/InventoryScreen';
 import { SalesStaffRankingScreen } from '../screens/sales-staff/SalesStaffRankingScreen';
 import { ProfileScreen } from '../screens/shared/ProfileScreen';
 import type { MockUser } from '../data/mock';
@@ -70,6 +71,17 @@ export function StoreManagerNavigator({ user, onLogout }: StoreManagerNavigatorP
             onScan={() => props.navigation.navigate('Scan')}
           />
         )}
+      </Tab.Screen>
+
+      <Tab.Screen
+        name="Inventory"
+        options={{
+          title: '库存',
+          tabBarIcon: ({ color }) => <Package size={24} color={color} />,
+          tabBarButtonTestID: 'tab-inventory',
+        }}
+      >
+        {() => <InventoryScreen user={user} />}
       </Tab.Screen>
 
       <Tab.Screen

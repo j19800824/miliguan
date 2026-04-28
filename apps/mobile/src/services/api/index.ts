@@ -9,3 +9,4 @@ export * from './inventory';
 export * from './stores';
 export * from './products';
 export * from './skus';
+export * from './replenishments';

@@ -1,8 +1,9 @@
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Colors } from '../constants/theme';
-import { Home, Clipboard, Trophy, User } from '../components/Icons';
+import { Home, Clipboard, Package, Trophy, User } from '../components/Icons';
 import { BranchGMHomeScreen } from '../screens/branch-gm/BranchGMHomeScreen';
 import { BranchGMOrdersScreen } from '../screens/branch-gm/BranchGMOrdersScreen';
+import { InventoryScreen } from '../screens/shared/InventoryScreen';
 import { SalesStaffRankingScreen } from '../screens/sales-staff/SalesStaffRankingScreen';
 import { ProfileScreen } from '../screens/shared/ProfileScreen';
 import type { MockUser } from '../data/mock';
@@ -40,6 +41,17 @@ export function BranchGMNavigator({ user, onLogout }: BranchGMNavigatorProps) {
         }}
       >
         {() => <BranchGMHomeScreen user={user} />}
+      </Tab.Screen>
+
+      <Tab.Screen
+        name="Inventory"
+        options={{
+          title: '库存',
+          tabBarIcon: ({ color }) => <Package size={24} color={color} />,
+          tabBarButtonTestID: 'tab-inventory',
+        }}
+      >
+        {() => <InventoryScreen user={user} />}
       </Tab.Screen>
 
       <Tab.Screen

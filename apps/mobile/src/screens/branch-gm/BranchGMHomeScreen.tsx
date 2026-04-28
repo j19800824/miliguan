@@ -55,6 +55,8 @@ export function BranchGMHomeScreen({ user }: BranchGMHomeScreenProps) {
       onRealtime('writeoff.created', reload),
       onRealtime('purchase.received', reload),
       onRealtime('inventory.warning', reload),
+      onRealtime('replenishment.submitted', reload),
+      onRealtime('replenishment.approved', reload),
     ];
     return () => {
       active = false;

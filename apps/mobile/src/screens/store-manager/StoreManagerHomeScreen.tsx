@@ -26,10 +26,13 @@ export function StoreManagerHomeScreen({ user, onScan }: StoreManagerHomeScreenP
       });
     };
     reload();
-    const unsub = onRealtime('writeoff.created', reload);
+    const unsubs = [
+      onRealtime('writeoff.created', reload),
+      onRealtime('replenishment.approved', reload),
+    ];
     return () => {
       active = false;
-      unsub();
+      unsubs.forEach((u) => u());
     };
   }, []);
 

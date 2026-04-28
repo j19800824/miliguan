@@ -43,6 +43,8 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
       onRealtime('writeoff.created', reload),
       onRealtime('purchase.approved', reload),
       onRealtime('purchase.received', reload),
+      onRealtime('replenishment.submitted', reload),
+      onRealtime('replenishment.approved', reload),
     ];
     return () => {
       active = false;
