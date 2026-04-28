@@ -8640,3 +8640,325 @@ export async function getCompanyInventoryForSku(companyId, skuId) {
     product_name: row.product_name
   };
 }
+
+/* ============================================================
+ * Stage 5: Store inventory + two-tier replenishment
+ * ============================================================ */
+
+let storeInventoryReady = false;
+
+export async function ensureStoreInventoryTables() {
+  if (storeInventoryReady) return;
+  await initializeDatabase();
+  await query(`
+    CREATE TABLE IF NOT EXISTS store_inventory (
+      id SERIAL PRIMARY KEY,
+      company_id INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      store_id INTEGER NOT NULL REFERENCES company_stores(id) ON DELETE CASCADE,
+      sku_id INTEGER NOT NULL REFERENCES product_skus(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL DEFAULT 0,
+      safety_stock INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      UNIQUE (store_id, sku_id)
+    );
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_store_inventory_store ON store_inventory(store_id);`);
+  await query(`ALTER TABLE inventory_logs ADD COLUMN IF NOT EXISTS store_id INTEGER REFERENCES company_stores(id) ON DELETE SET NULL;`);
+  storeInventoryReady = true;
+}
+
+export async function getStoreInventory(storeId) {
+  if (!storeId) return [];
+  await ensureStoreInventoryTables();
+  const rows = (
+    await query(
+      `
+        SELECT si.id, si.sku_id, si.quantity, si.safety_stock,
+               ps.sku_code, ps.barcode, ps.image_url,
+               p.name AS product_name, ps.spec, ps.unit
+        FROM store_inventory si
+        INNER JOIN product_skus ps ON ps.id = si.sku_id
+        INNER JOIN products p ON p.id = ps.product_id
+        WHERE si.store_id = $1
+        ORDER BY (si.quantity <= si.safety_stock) DESC, p.name
+      `,
+      [Number(storeId)]
+    )
+  ).rows;
+  return rows.map((r) => ({
+    id: String(r.id),
+    skuId: String(r.sku_id),
+    skuCode: r.sku_code,
+    barcode: r.barcode,
+    imageUrl: r.image_url,
+    productName: r.product_name,
+    spec: r.spec,
+    unit: r.unit,
+    quantity: Number(r.quantity ?? 0),
+    safetyStock: Number(r.safety_stock ?? 0),
+    warn: Number(r.quantity ?? 0) <= Number(r.safety_stock ?? 0)
+  }));
+}
+
+export async function createReplenishment(user, items, remark = '') {
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('请至少选择一个商品');
+  }
+  if (!user?.companyId) {
+    throw new Error('当前账号未绑定分公司');
+  }
+  await ensureStoreInventoryTables();
+  const isStoreLevel = Boolean(user.storeId);
+
+  const companyRow = (
+    await query(`SELECT code FROM companies WHERE id = $1`, [Number(user.companyId)])
+  ).rows[0];
+  if (!companyRow) throw new Error('分公司不存在');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const skuIds = items.map((it) => Number(it.sku_id)).filter(Boolean);
+    const skuRows = (
+      await client.query(
+        `SELECT id, order_quota_price FROM product_skus WHERE id = ANY($1::int[])`,
+        [skuIds]
+      )
+    ).rows;
+    const priceBySku = new Map(
+      skuRows.map((r) => [String(r.id), Number(r.order_quota_price ?? 0)])
+    );
+
+    const total = items.reduce((sum, it) => {
+      const price = priceBySku.get(String(it.sku_id)) ?? 0;
+      return sum + price * Number(it.quantity || 0);
+    }, 0);
+
+    const orderNo = await generatePurchaseOrderNo(client, companyRow.code);
+    const ts = now();
+    const orderResult = await client.query(
+      `
+        INSERT INTO purchase_orders
+          (order_no, company_id, status, order_quota_total, store_id,
+           remark, abnormal_flag, approval_status,
+           order_quota_deducted, stock_received, updated_by, created_at, updated_at)
+        VALUES ($1, $2, '待审核', $3, $4, $5, FALSE, '待审核', FALSE, FALSE, $6, $7, $7)
+        RETURNING id
+      `,
+      [
+        orderNo,
+        Number(user.companyId),
+        total,
+        isStoreLevel ? Number(user.storeId) : null,
+        String(remark ?? ''),
+        user.fullName ?? user.account ?? '移动端用户',
+        ts
+      ]
+    );
+    const orderId = orderResult.rows[0].id;
+
+    for (const it of items) {
+      const skuId = Number(it.sku_id);
+      const qty = Number(it.quantity);
+      const price = priceBySku.get(String(skuId)) ?? 0;
+      await client.query(
+        `
+          INSERT INTO purchase_order_items
+            (purchase_order_id, sku_id, quantity, order_quota_unit_price, subtotal_order_quota)
+          VALUES ($1, $2, $3, $4, $5)
+        `,
+        [orderId, skuId, qty, price, price * qty]
+      );
+    }
+
+    await client.query('COMMIT');
+    return { id: String(orderId), orderNo, isStoreLevel };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function approveReplenishment(orderId, decision, actor) {
+  await ensureStoreInventoryTables();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const order = (
+      await client.query(
+        `SELECT id, order_no, company_id, store_id, status
+         FROM purchase_orders WHERE id = $1 FOR UPDATE`,
+        [Number(orderId)]
+      )
+    ).rows[0];
+
+    if (!order) throw new Error('补货请求不存在');
+    if (!order.store_id) throw new Error('该订单不是门店补货请求');
+    if (order.status !== '待审核') {
+      throw new Error(`订单状态为 ${order.status}，不能审核`);
+    }
+
+    if (decision === '驳回') {
+      await client.query(
+        `UPDATE purchase_orders SET status = '已驳回', approval_status = '已驳回', updated_by = $2, updated_at = NOW() WHERE id = $1`,
+        [order.id, actor ?? '后台用户']
+      );
+      await client.query('COMMIT');
+      return { id: String(order.id), orderNo: order.order_no, status: '已驳回' };
+    }
+
+    // Approve: transfer stock from company_inventory to store_inventory.
+    const items = (
+      await client.query(
+        `SELECT sku_id, quantity FROM purchase_order_items WHERE purchase_order_id = $1`,
+        [order.id]
+      )
+    ).rows;
+
+    for (const it of items) {
+      const skuId = Number(it.sku_id);
+      const qty = Number(it.quantity);
+
+      const ci = (
+        await client.query(
+          `SELECT id, quantity FROM company_inventory
+           WHERE company_id = $1 AND sku_id = $2 AND delete_status = '正常'
+           FOR UPDATE`,
+          [order.company_id, skuId]
+        )
+      ).rows[0];
+      if (!ci || Number(ci.quantity) < qty) {
+        throw new Error(`SKU ${skuId} 分公司库存不足`);
+      }
+      const newCompanyQty = Number(ci.quantity) - qty;
+      await client.query(
+        `UPDATE company_inventory SET quantity = $1, updated_by = $3, updated_at = NOW() WHERE id = $2`,
+        [newCompanyQty, ci.id, actor ?? '后台用户']
+      );
+      await client.query(
+        `INSERT INTO inventory_logs (company_id, sku_id, source_type, source_id, change_type, quantity, balance_after, remark, created_at, store_id)
+         VALUES ($1, $2, 'replenishment', $3, '调出', $4, $5, '调拨给门店', NOW(), NULL)`,
+        [order.company_id, skuId, String(order.id), -qty, newCompanyQty]
+      );
+
+      const ts = now();
+      const existing = (
+        await client.query(
+          `SELECT id, quantity FROM store_inventory WHERE store_id = $1 AND sku_id = $2 FOR UPDATE`,
+          [order.store_id, skuId]
+        )
+      ).rows[0];
+      let newStoreQty;
+      if (existing) {
+        newStoreQty = Number(existing.quantity) + qty;
+        await client.query(
+          `UPDATE store_inventory SET quantity = $1, updated_at = $3 WHERE id = $2`,
+          [newStoreQty, existing.id, ts]
+        );
+      } else {
+        newStoreQty = qty;
+        await client.query(
+          `INSERT INTO store_inventory (company_id, store_id, sku_id, quantity, safety_stock, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, 0, $5, $5)`,
+          [order.company_id, order.store_id, skuId, qty, ts]
+        );
+      }
+      await client.query(
+        `INSERT INTO inventory_logs (company_id, sku_id, source_type, source_id, change_type, quantity, balance_after, remark, created_at, store_id)
+         VALUES ($1, $2, 'replenishment', $3, '调入', $4, $5, '门店补货入库', NOW(), $6)`,
+        [order.company_id, skuId, String(order.id), qty, newStoreQty, order.store_id]
+      );
+    }
+
+    await client.query(
+      `UPDATE purchase_orders
+         SET status = '已入库', approval_status = '已通过',
+             order_quota_deducted = TRUE, stock_received = TRUE,
+             updated_by = $2, updated_at = NOW()
+       WHERE id = $1`,
+      [order.id, actor ?? '后台用户']
+    );
+    await client.query('COMMIT');
+    return { id: String(order.id), orderNo: order.order_no, status: '已入库' };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listReplenishmentsForUser(user) {
+  await ensureStoreInventoryTables();
+  if (!user?.companyId) return [];
+  const params = [Number(user.companyId)];
+  let scope = 'po.company_id = $1';
+  if (user.storeId) {
+    params.push(Number(user.storeId));
+    scope += ' AND po.store_id = $2';
+  } else {
+    scope += ' AND po.store_id IS NULL';
+  }
+  const rows = (
+    await query(
+      `
+        SELECT po.id, po.order_no, po.status, po.created_at, po.order_quota_total,
+               COALESCE(SUM(poi.quantity), 0)::int AS total_qty
+        FROM purchase_orders po
+        LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id
+        WHERE po.delete_status = '正常' AND ${scope}
+        GROUP BY po.id
+        ORDER BY po.created_at DESC
+        LIMIT 100
+      `,
+      params
+    )
+  ).rows;
+  return rows.map((r) => ({
+    id: String(r.id),
+    orderNo: r.order_no,
+    status: r.status,
+    totalAmount: Number(r.order_quota_total ?? 0),
+    totalQty: Number(r.total_qty ?? 0),
+    createdAt: r.created_at
+  }));
+}
+
+export async function listPendingReplenishmentsForBranch(user) {
+  await ensureStoreInventoryTables();
+  if (!user?.companyId) return [];
+  const rows = (
+    await query(
+      `
+        SELECT po.id, po.order_no, po.status, po.created_at, po.store_id,
+               cs.name AS store_name,
+               COALESCE(SUM(poi.quantity), 0)::int AS total_qty,
+               po.order_quota_total
+        FROM purchase_orders po
+        LEFT JOIN company_stores cs ON cs.id = po.store_id
+        LEFT JOIN purchase_order_items poi ON poi.purchase_order_id = po.id
+        WHERE po.company_id = $1
+          AND po.store_id IS NOT NULL
+          AND po.status = '待审核'
+          AND po.delete_status = '正常'
+        GROUP BY po.id, cs.name
+        ORDER BY po.created_at ASC
+      `,
+      [Number(user.companyId)]
+    )
+  ).rows;
+  return rows.map((r) => ({
+    id: String(r.id),
+    orderNo: r.order_no,
+    storeId: String(r.store_id),
+    storeName: r.store_name,
+    totalQty: Number(r.total_qty ?? 0),
+    totalAmount: Number(r.order_quota_total ?? 0),
+    createdAt: r.created_at
+  }));
+}
