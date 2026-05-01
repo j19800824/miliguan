@@ -9198,7 +9198,7 @@ export async function changeMobilePassword(userId, currentPlain, newPlain) {
   return { ok: true };
 }
 
-export async function getMemberOrderDetail(id, user) {
+export async function getMobileOrderDetail(id, user) {
   if (!id) return null;
   await initializeDatabase();
   // Accept either numeric id or order_no string (mobile list returns order_no as id).

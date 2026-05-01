@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getMobileSession } from '@/lib/auth/mobile';
-import { getMemberOrderDetail } from '@/lib/database.js';
+import { getMobileOrderDetail } from '@/lib/database.js';
 
 export async function GET(
   req: Request,
@@ -10,7 +10,7 @@ export async function GET(
   if (!user) return NextResponse.json({ message: '未登录' }, { status: 401 });
   const { id } = await ctx.params;
   try {
-    const detail = await getMemberOrderDetail(id, user);
+    const detail = await getMobileOrderDetail(id, user);
     if (!detail) {
       return NextResponse.json({ message: '订单不存在' }, { status: 404 });
     }
