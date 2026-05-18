@@ -314,9 +314,7 @@ export function ManagementListPage({
   };
 
   const resetStaffPassword = async (row: DataRow) => {
-    const nextPassword = window.prompt(`为 ${row.name} 设置新密码`, '');
-
-    if (!nextPassword) {
+    if (!window.confirm(`确认为 ${row.name} 生成新的随机密码，并短信通知对方吗？`)) {
       return;
     }
 
@@ -325,8 +323,7 @@ export function ManagementListPage({
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ password: nextPassword })
+      }
     });
     setIsSubmitting(false);
 
@@ -336,7 +333,8 @@ export function ManagementListPage({
       return;
     }
 
-    toast.success(`已重置 ${row.name} 的密码`);
+    const body = await response.json().catch(() => ({} as { message?: string }));
+    toast.success(body.message ?? `已重置 ${row.name} 的密码`);
     router.refresh();
   };
 

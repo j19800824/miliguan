@@ -15,3 +15,4 @@ export * from './notifications';
 export * from './today-stats';
 export * from './me';
 export * from './me-orders';
+export * from './payments';

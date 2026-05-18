@@ -18,6 +18,7 @@ import { SettingsScreen } from '../screens/shared/SettingsScreen';
 import { HelpScreen } from '../screens/shared/HelpScreen';
 import { ChangePasswordScreen } from '../screens/shared/ChangePasswordScreen';
 import { OrderDetailScreen } from '../screens/shared/OrderDetailScreen';
+import { PaymentScreen } from '../screens/shared/PaymentScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
@@ -161,6 +162,11 @@ export function BranchGMNavigator({ user, onLogout }: NavProps) {
         name="OrderDetail"
         component={OrderDetailScreen}
         options={{ headerShown: true, title: '订单详情' }}
+      />
+      <Stack.Screen
+        name="Payment"
+        component={PaymentScreen}
+        options={{ headerShown: true, title: '收款' }}
       />
     </Stack.Navigator>
   );

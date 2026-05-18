@@ -199,3 +199,42 @@ export async function notifyReplenishmentApproved(
     );
   }
 }
+
+/* ============================================================
+ * Stage 8: payment events
+ * ============================================================
+ * publishEvent is called inline from orchestrator.ts to keep
+ * the payment lifecycle in one file. These helpers are exported
+ * for ad-hoc use by reconciliation jobs / admin tools.
+ */
+
+export interface PaymentSuccessNotification {
+  orderNo: string;
+  companyId?: string | number;
+  storeId?: string | number;
+  paidAmount: number;
+}
+
+export async function notifyPaymentSuccess(p: PaymentSuccessNotification) {
+  await publishEvent({
+    type: 'payment.success',
+    scope: { companyId: p.companyId, storeId: p.storeId },
+    data: p as unknown as Record<string, unknown>,
+  });
+}
+
+export interface PaymentRefundedNotification {
+  orderNo: string;
+  companyId?: string | number;
+  storeId?: string | number;
+  refundedAmount: number;
+  writeoffReverted: boolean;
+}
+
+export async function notifyPaymentRefunded(p: PaymentRefundedNotification) {
+  await publishEvent({
+    type: 'payment.refunded',
+    scope: { companyId: p.companyId, storeId: p.storeId },
+    data: p as unknown as Record<string, unknown>,
+  });
+}

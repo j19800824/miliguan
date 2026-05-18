@@ -47,8 +47,8 @@ export async function POST(
       const { id } = await context.params;
       try {
         const payload = await request.json();
-        const storeId = await createCompanyStore(id, payload, user.name ?? user.account ?? '后台用户', user);
-        return NextResponse.json({ id: String(storeId) }, { status: 201 });
+        const result = await createCompanyStore(id, payload, user.name ?? user.account ?? '后台用户', user);
+        return NextResponse.json({ id: String(result.id), message: result.message }, { status: 201 });
       } catch (error) {
         const message = error instanceof Error ? error.message : '新增门店失败';
         return NextResponse.json({

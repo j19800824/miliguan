@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme';
 import { postVerifyScan, type VerifyScanResult } from '../../services/api';
@@ -27,6 +28,8 @@ const SUPPORTED_BARCODES = [
 
 export function ScanScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const [permission, requestPermission] = useCameraPermissions();
   const [state, setState] = useState<ScanState>('scanning');
   const [result, setResult] = useState<VerifyScanResult | null>(null);
@@ -221,14 +224,30 @@ export function ScanScreen() {
               </Text>
             </View>
           </View>
-          <TouchableOpacity
-            testID="scan-continue"
-            style={styles.continueBtn}
-            onPress={handleReset}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.continueBtnText}>继续扫码</Text>
-          </TouchableOpacity>
+          <View style={styles.successActions}>
+            <TouchableOpacity
+              testID="scan-pay-now"
+              style={styles.payBtn}
+              onPress={() => {
+                nav.navigate('Payment', {
+                  writeoffId: result?.writeoffId,
+                  productName: result?.product?.name,
+                });
+                handleReset();
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={styles.payBtnText}>去付款</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID="scan-continue"
+              style={styles.continueBtn}
+              onPress={handleReset}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.continueBtnText}>继续扫码</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       )}
 
@@ -494,6 +513,14 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
   },
   continueBtnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '700' },
+  successActions: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
+  payBtn: {
+    backgroundColor: Colors.gold,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+  },
+  payBtnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '700' },
 
   demoRow: {
     flexDirection: 'row',

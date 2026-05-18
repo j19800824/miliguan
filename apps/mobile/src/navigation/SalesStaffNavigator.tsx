@@ -14,6 +14,7 @@ import { MyOrdersScreen } from '../screens/shared/MyOrdersScreen';
 import { SettingsScreen } from '../screens/shared/SettingsScreen';
 import { HelpScreen } from '../screens/shared/HelpScreen';
 import { ChangePasswordScreen } from '../screens/shared/ChangePasswordScreen';
+import { PaymentScreen } from '../screens/shared/PaymentScreen';
 import type { MockUser } from '../data/mock';
 
 const Tab = createBottomTabNavigator();
@@ -155,6 +156,11 @@ export function SalesStaffNavigator({ user, onLogout }: NavProps) {
         name="ChangePassword"
         component={ChangePasswordScreen}
         options={{ headerShown: true, title: '修改密码' }}
+      />
+      <Stack.Screen
+        name="Payment"
+        component={PaymentScreen}
+        options={{ headerShown: true, title: '收款' }}
       />
     </Stack.Navigator>
   );

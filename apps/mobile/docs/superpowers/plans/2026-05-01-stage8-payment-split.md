@@ -145,14 +145,31 @@ Cron at 23:30 daily:
 - 日志脱敏 — never log `payer_uid` raw; mask middle 6 digits when surfaced in UI/logs
 - 最小权限 — Bearer JWT only; webhooks have no JWT but have signature
 
-## Open Questions (still need user input — Phase 8.3+)
+## Locked-in Decisions (2026-05-01)
 
-1. Payment timing: A (after writeoff, recommended) vs B (online prepay)
-2. Account structure: A (sub-merchant per store, recommended) vs B (per-recipient bank cards) vs C (single account + manual reconciliation)
-3. Split dimensions: HQ tech fee / branch margin / store revenue / sales commission
-4. Sales staff commission: A (real payout to individual) vs B (recommended — to store account, internal accounting) vs C (points only)
-5. Refund scope: A (full + auto-reverse writeoff, recommended) vs B (partial)
-6. v1 surface: A (in-store QR only, recommended) vs B (also online mini-program)
+All 6 open questions resolved to **recommended** option:
+
+1. ✅ **Payment timing** = A — after writeoff, immediate QR payment
+2. ✅ **Account structure** = A — HQ master merchant + sub-merchant per store, splits land in sub-merchant accounts
+3. ✅ **Split dimensions** = 4-way:
+   - HQ tech fee: 5% (configurable global rule)
+   - Branch margin: per-SKU / per-company configurable
+   - Store revenue: residual (priority lowest)
+   - Sales-staff commission: 10% of store revenue, but → **option B** (goes to store account, internal accounting only)
+4. ✅ **Sales-staff commission** = B — money stays in store sub-merchant, "points" UI is just an internal counter
+5. ✅ **Refund scope** = A — full refund + auto-cancel writeoff + restore company_inventory in single transaction
+6. ✅ **v1 surface** = A — in-store QR only (mobile shows the QR, customer scans with WeChat/Alipay)
+
+Default rules seeded in `seedDefaultSplitRules()` on first `ensurePaymentTables()` call:
+
+| Priority | Scope | Recipient | Rate type | Value | Meaning |
+|---|---|---|---|---|---|
+| 10 | global | hq | percent | 0.05 | 5% to HQ |
+| 50 | company | company | percent | 0.15 | 15% branch margin |
+| 100 | store | store | residual (%) | rest | rest to store |
+| 200 | store | sales_staff | percent of store | 0.10 | "internal" — accounting only |
+
+Per-SKU overrides can be inserted later via `payment_split_rules.scope='sku'`.
 
 ## Out of Scope (next stage)
 

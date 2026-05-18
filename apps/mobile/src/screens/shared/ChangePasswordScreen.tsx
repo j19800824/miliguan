@@ -104,7 +104,7 @@ export function ChangePasswordScreen() {
         </TouchableOpacity>
 
         <Text style={styles.note}>
-          忘记密码？请联系管理员重置（默认密码 123456）。
+          忘记密码？请联系管理员生成新的随机密码，并通过短信发送。
         </Text>
       </ScrollView>
     </KeyboardAvoidingView>

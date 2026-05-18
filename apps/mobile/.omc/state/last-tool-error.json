@@ -1,0 +1,7 @@
+{
+  "tool_name": "Bash",
+  "tool_input_preview": "{\"command\":\"git add apps/mobile/src/services apps/mobile/src/screens/products-screen.tsx && git commit -m \\\"refactor(mobile): move products service into services/api/\\n\\nCo-Authored-By: Claude Opus 4....",
+  "error": "Exit code 128\nwarning: could not open directory 'apps/mobile/apps/mobile/src/': No such file or directory\nfatal: pathspec 'apps/mobile/src/services' did not match any files",
+  "timestamp": "2026-04-25T12:07:35.485Z",
+  "retry_count": 1
+}

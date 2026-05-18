@@ -5,7 +5,7 @@
 #
 # Default seeded creds from apps/admin/src/lib/auth/shared.ts:
 #   admin / admin123
-#   boss / boss123
+#   admin / admin123
 appId: host.exp.Exponent
 name: Real-backend credential login
 ---
@@ -14,10 +14,10 @@ name: Real-backend credential login
 - assertVisible: "欢迎登录"
 - tapOn:
     id: "login-account"
-- inputText: "boss"
+- inputText: "admin"
 - tapOn:
     id: "login-password"
-- inputText: "boss123"
+- inputText: "admin123"
 - tapOn:
     id: "login-submit"
 - assertVisible:

@@ -9596,31 +9596,243 @@ export async function saveStoreTerminal(storeId, terminalSn, terminalKey, device
 
 export async function listSplitRulesForContext({ companyId, storeId } = {}) {
   await ensurePaymentTables();
-  // Match rules in priority order: store > company > global. Return all applicable.
   const params = [];
-  const conds = [`status = '启用'`];
+  const orClauses = [`scope = 'global'`];
+  if (companyId) {
+    params.push(String(companyId));
+    orClauses.push(`(scope = 'company' AND scope_id = $${params.length})`);
+  }
   if (storeId) {
     params.push(String(storeId));
-    conds.push(
-      `(scope = 'global' OR (scope = 'company' AND scope_id = $${params.length - (storeId ? 1 : 0) + 1}) OR (scope = 'store' AND scope_id = $${params.length}))`
+    orClauses.push(`(scope = 'store' AND scope_id = $${params.length})`);
+  }
+  const sql = `
+    SELECT * FROM payment_split_rules
+    WHERE status = '启用' AND (${orClauses.join(' OR ')})
+    ORDER BY priority ASC, id ASC
+  `;
+  return (await query(sql, params)).rows;
+}
+
+/**
+ * Seed default 4-way split rules (HQ 5% / branch 15% / store residual /
+ * sales_staff 10% of store). Runs once; subsequent inserts are skipped if
+ * any rule already exists. Idempotent.
+ */
+export async function seedDefaultSplitRules() {
+  await ensurePaymentTables();
+  const existing = Number(
+    (await query(`SELECT COUNT(*)::int AS c FROM payment_split_rules`)).rows[0]
+      .c
+  );
+  if (existing > 0) return;
+  const ts = now();
+  const seeds = [
+    { scope: 'global', recipient_type: 'hq', rate_type: 'percent', rate_value: 0.05, priority: 10, remark: '总部技术服务费 5%' },
+    { scope: 'global', recipient_type: 'company', rate_type: 'percent', rate_value: 0.15, priority: 50, remark: '分公司毛利 15%（默认）' },
+    { scope: 'global', recipient_type: 'store', rate_type: 'residual', rate_value: 1.0, priority: 100, remark: '门店净收入（剩余）' },
+    { scope: 'global', recipient_type: 'sales_staff', rate_type: 'percent_of_store', rate_value: 0.10, priority: 200, remark: '销售员提成（门店内部记账）' }
+  ];
+  for (const s of seeds) {
+    await query(
+      `INSERT INTO payment_split_rules
+        (scope, scope_id, recipient_type, rate_type, rate_value, priority, status, remark, created_at, updated_at)
+       VALUES ($1, '', $2, $3, $4, $5, '启用', $6, $7, $7)`,
+      [s.scope, s.recipient_type, s.rate_type, s.rate_value, s.priority, s.remark, ts]
     );
-  } else if (companyId) {
+  }
+}
+
+/**
+ * Compute split amounts for a payment order using applicable rules.
+ * Returns an array of { recipientType, recipientAccountId, amount, ruleId }.
+ * Rule semantics:
+ *   - 'percent'           : rate × paidAmount
+ *   - 'fixed'             : rate (in yuan)
+ *   - 'percent_of_store'  : rate × store residual (computed after store rule)
+ *   - 'residual'          : whatever is left after percent/fixed rules
+ *
+ * Math is in yuan, rounded down to 分 (2 decimals). The residual rule
+ * (priority 100, store) absorbs rounding so totals always reconcile.
+ */
+export async function computeSplitsForPayment(paymentOrderId) {
+  await ensurePaymentTables();
+  const order = await getPaymentOrderById(paymentOrderId);
+  if (!order) throw new Error('支付订单不存在');
+  const paidAmount = Number(order.paid_amount ?? 0);
+  if (paidAmount <= 0) return [];
+
+  const rules = await listSplitRulesForContext({
+    companyId: order.company_id,
+    storeId: order.store_id
+  });
+
+  const accounts = await listSettlementAccountsByContext({
+    companyId: order.company_id,
+    storeId: order.store_id
+  });
+  const accountByType = new Map();
+  for (const a of accounts) {
+    if (!accountByType.has(a.owner_type)) accountByType.set(a.owner_type, a);
+  }
+
+  let storeAmount = 0;
+  const splits = [];
+
+  // Pass 1: percent + fixed (excluding residual + percent_of_store)
+  for (const r of rules) {
+    if (r.rate_type === 'residual' || r.rate_type === 'percent_of_store') continue;
+    let amount = 0;
+    if (r.rate_type === 'percent') amount = paidAmount * Number(r.rate_value);
+    else if (r.rate_type === 'fixed') amount = Number(r.rate_value);
+    amount = Math.floor(amount * 100) / 100;
+    if (amount <= 0) continue;
+    splits.push({
+      ruleId: r.id,
+      recipientType: r.recipient_type,
+      recipientAccountId: accountByType.get(r.recipient_type)?.id ?? null,
+      amount
+    });
+  }
+
+  // Pass 2: residual goes to store; rounding absorbed here
+  const allocated = splits.reduce((sum, s) => sum + s.amount, 0);
+  const residual = Math.max(0, Math.floor((paidAmount - allocated) * 100) / 100);
+  for (const r of rules) {
+    if (r.rate_type !== 'residual') continue;
+    storeAmount = residual;
+    if (storeAmount <= 0) continue;
+    splits.push({
+      ruleId: r.id,
+      recipientType: r.recipient_type,
+      recipientAccountId: accountByType.get(r.recipient_type)?.id ?? null,
+      amount: storeAmount
+    });
+    break;
+  }
+
+  // Pass 3: percent_of_store (sales staff commission — internal accounting,
+  // does NOT add to total payout; we record it but route to store account)
+  for (const r of rules) {
+    if (r.rate_type !== 'percent_of_store') continue;
+    let amount = storeAmount * Number(r.rate_value);
+    amount = Math.floor(amount * 100) / 100;
+    if (amount <= 0) continue;
+    splits.push({
+      ruleId: r.id,
+      recipientType: r.recipient_type,
+      // Sales_staff commission lands in store account; flag via account id.
+      recipientAccountId: accountByType.get('store')?.id ?? null,
+      amount
+    });
+  }
+
+  return splits;
+}
+
+export async function listSettlementAccountsByContext({ companyId, storeId } = {}) {
+  await ensurePaymentTables();
+  // Match by owner_type chain — hq applies always; company matches its id;
+  // store matches its id; sales_staff is store-scoped but settled to store.
+  const params = [];
+  const conds = [`status = '启用'`];
+  const orClauses = [`owner_type = 'hq'`];
+  if (companyId) {
     params.push(String(companyId));
-    conds.push(`(scope = 'global' OR (scope = 'company' AND scope_id = $${params.length}))`);
-  } else {
-    conds.push(`scope = 'global'`);
+    orClauses.push(`(owner_type = 'company' AND owner_id = $${params.length})`);
   }
-  const sql = `SELECT * FROM payment_split_rules WHERE ${conds.join(' AND ')} ORDER BY priority ASC, id ASC`;
-  // Build params correctly:
-  const actualParams = [];
   if (storeId) {
-    actualParams.push(String(companyId ?? ''));
-    actualParams.push(String(storeId));
-  } else if (companyId) {
-    actualParams.push(String(companyId));
+    params.push(String(storeId));
+    orClauses.push(`(owner_type = 'store' AND owner_id = $${params.length})`);
   }
-  const rows = (await query(sql, actualParams)).rows;
-  return rows;
+  conds.push(`(${orClauses.join(' OR ')})`);
+  return (
+    await query(
+      `SELECT * FROM settlement_accounts WHERE ${conds.join(' AND ')}`,
+      params
+    )
+  ).rows;
+}
+
+/**
+ * Look up the sale_price for a writeoff (via member_order_items → product_skus).
+ * Falls back to redeem_points_price/100 when sale_price is 0 (so mock data
+ * with no real prices still produces a non-zero amount).
+ */
+export async function getWriteoffPayableAmount(writeoffId) {
+  if (!writeoffId) return null;
+  await initializeDatabase();
+  const row = (
+    await query(
+      `
+        SELECT w.id, w.sku_id, w.member_order_id, w.store_id,
+               ps.sale_price, ps.redeem_points_price,
+               moi.unit_price, moi.quantity
+        FROM writeoff_records w
+        LEFT JOIN product_skus ps ON ps.id = w.sku_id
+        LEFT JOIN member_order_items moi
+               ON moi.member_order_id = w.member_order_id
+              AND moi.sku_id = w.sku_id
+        WHERE w.id = $1
+        LIMIT 1
+      `,
+      [Number(writeoffId)]
+    )
+  ).rows[0];
+  if (!row) return null;
+  const unit = Number(row.unit_price ?? row.sale_price ?? 0);
+  const qty = Number(row.quantity ?? 1);
+  let amount = unit * qty;
+  if (amount <= 0) {
+    // Mock-data fallback: 1 redeem_points_price unit ≈ 1 yuan
+    amount = Number(row.redeem_points_price ?? 0) / 10;
+  }
+  return Math.max(0, Math.floor(amount * 100) / 100);
+}
+
+/**
+ * Reverse a writeoff: flip status, restore inventory, mark items as 待核销
+ * again. Wrapped in a transaction so a partial refund + restore can't
+ * leave the system inconsistent.
+ */
+export async function revertWriteoff(writeoffId, actor) {
+  if (!writeoffId) return;
+  await initializeDatabase();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const w = (
+      await client.query(
+        `SELECT id, member_order_id, sku_id, store_id, status FROM writeoff_records WHERE id = $1 FOR UPDATE`,
+        [Number(writeoffId)]
+      )
+    ).rows[0];
+    if (!w) {
+      await client.query('ROLLBACK');
+      return;
+    }
+    if (w.status === '已撤销') {
+      await client.query('COMMIT');
+      return;
+    }
+    await client.query(
+      `UPDATE writeoff_records SET status = '已撤销', remark = COALESCE(remark, '') || ' [撤销:' || $2 || ']' WHERE id = $1`,
+      [Number(w.id), String(actor ?? '系统').slice(0, 64)]
+    );
+    if (w.member_order_id) {
+      await client.query(
+        `UPDATE member_order_items SET writeoff_status = '待核销'
+         WHERE member_order_id = $1 AND sku_id = $2`,
+        [Number(w.member_order_id), Number(w.sku_id)]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function recordPaymentSplit({

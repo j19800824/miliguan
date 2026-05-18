@@ -38,15 +38,8 @@ export async function PUT(
       }
 
       try {
-        const body = (await request.json()) as { password?: string };
-        const password = body.password?.trim();
-
-        if (!password || password.length < 6) {
-          return NextResponse.json({ message: '新密码至少需要 6 位' }, { status: 400 });
-        }
-
-        await resetStaffPassword(id, password, user?.name ?? user?.account ?? '后台用户');
-        return NextResponse.json({ success: true });
+        const result = await resetStaffPassword(id, undefined, user?.name ?? user?.account ?? '后台用户');
+        return NextResponse.json({ success: true, message: result.message });
       } catch (error) {
         const message = error instanceof Error ? error.message : '重置密码失败';
         return NextResponse.json({ message }, { status: 400 });

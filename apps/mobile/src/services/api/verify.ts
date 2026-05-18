@@ -9,6 +9,7 @@ export interface VerifyScanRequest {
 
 export interface VerifyScanResult {
   success: boolean;
+  writeoffId?: string;
   product?: { name: string; sku: string; points: number };
   message?: string;
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSession, getAdminByAccount } from '@/lib/database.js';
+import { createSession, getMobileAdminByAccount } from '@/lib/database.js';
 import { signAdminJwt } from '@/lib/auth/jwt';
 import { auditRoute } from '@/lib/audit';
 
@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     handler: async () => {
       try {
         const body = (await req.json()) as { account?: string; password?: string };
-        const user = await getAdminByAccount(body.account ?? '', body.password ?? '');
+        const user = await getMobileAdminByAccount(body.account ?? '', body.password ?? '');
 
         if (!user) {
           return NextResponse.json({ message: '账号或密码不正确' }, { status: 401 });

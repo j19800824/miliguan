@@ -170,7 +170,7 @@ export function createStaffConfig(roleOptions: SelectOption[]): ManagementConfig
   return {
     entity: 'staff',
     title: '后台员工管理',
-    description: '管理后台账号、所属岗位、部门与登录状态。',
+    description: '管理后台账号、所属岗位、部门与登录状态。新增账号生成一次性随机初始密码，并通过短信发送。',
     viewPermission: 'staff:view',
     writePermission: 'staff:edit',
     searchPlaceholder: '搜索员工姓名、手机号或邮箱',
@@ -194,7 +194,6 @@ export function createStaffConfig(roleOptions: SelectOption[]): ManagementConfig
     fields: [
       { name: 'name', label: '姓名', type: 'text', required: true },
       { name: 'account', label: '登录账号', type: 'text', required: true },
-      { name: 'password', label: '登录密码', type: 'text', required: true },
       { name: 'department', label: '部门', type: 'text', required: true },
       { name: 'role_id', label: '岗位角色', type: 'select', required: true, options: roleOptions },
       {
