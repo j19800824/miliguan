@@ -3,8 +3,8 @@ import { Pool } from 'pg';
 import { createClient } from 'redis';
 import { hashPassword, isPasswordHash, verifyPassword } from './auth/password.js';
 import {
-  DEFAULT_ACCOUNT_PASSWORD,
   formatAccountSmsResult,
+  generateAccountPassword,
   isMainlandMobile,
   sendAccountPasswordSmsSafe
 } from './sms.js';
@@ -6500,7 +6500,7 @@ export async function createCompanyStore(companyId, payload, actorName = '后台
   const timestamp = now();
   const defaultStoreQuota = await getDefaultStoreOrderQuota();
   const storeCode = await generateStoreCode(companyId, company.code);
-  const initialPassword = DEFAULT_ACCOUNT_PASSWORD;
+  const initialPassword = generateAccountPassword();
   const hashedPassword = await hashPassword(initialPassword);
 
   const client = await pool.connect();
@@ -7984,10 +7984,12 @@ export async function createRecord(entity, payload, actorName = '后台用户', 
         if (!isMainlandMobile(phone)) {
           throw new Error('请填写 11 位员工手机号，用于发送初始密码短信');
         }
+        const initialPassword = generateAccountPassword();
         normalizedPayload = {
           ...payload,
           phone,
-          password: await hashPassword(DEFAULT_ACCOUNT_PASSWORD)
+          password: await hashPassword(initialPassword),
+          __plainInitialPassword: initialPassword
         };
       }
       const values = config.normalize(normalizedPayload);
@@ -8001,7 +8003,7 @@ export async function createRecord(entity, payload, actorName = '后台用户', 
           phone: normalizedPayload.phone,
           name: normalizedPayload.name,
           account: normalizedPayload.account,
-          password: DEFAULT_ACCOUNT_PASSWORD,
+          password: normalizedPayload.__plainInitialPassword,
           scene: '后台员工账号创建'
         });
       }
@@ -8197,7 +8199,7 @@ export async function updateStaffStatus(id, status, actorName = '后台用户') 
   ]);
 }
 
-export async function resetStaffPassword(id, password = DEFAULT_ACCOUNT_PASSWORD, actorName = '后台用户') {
+export async function resetStaffPassword(id, password = generateAccountPassword(), actorName = '后台用户') {
   await initializeDatabase();
   const staff = (
     await query(
@@ -8217,7 +8219,7 @@ export async function resetStaffPassword(id, password = DEFAULT_ACCOUNT_PASSWORD
     throw new Error('员工手机号无效，无法发送密码短信');
   }
 
-  const nextPassword = String(password || DEFAULT_ACCOUNT_PASSWORD);
+  const nextPassword = String(password || generateAccountPassword());
   const hashedPassword = await hashPassword(nextPassword);
   await query('UPDATE admin_staff SET password = $1, updated_by = $2, updated_at = $3 WHERE id = $4', [
     hashedPassword,
@@ -8232,7 +8234,7 @@ export async function resetStaffPassword(id, password = DEFAULT_ACCOUNT_PASSWORD
     password: nextPassword,
     scene: '后台员工密码重置'
   });
-  return { message: formatAccountSmsResult('密码已重置为默认密码', smsResult) };
+  return { message: formatAccountSmsResult('已生成新的随机密码', smsResult) };
 }
 
 export async function changeAdminPassword(id, currentPassword, nextPassword) {
@@ -9302,4 +9304,470 @@ export async function getInventoryWarnings(companyId) {
     quantity: Number(r.quantity ?? 0),
     safetyStock: Number(r.safety_stock ?? 0)
   }));
+}
+
+/* ============================================================
+ * Stage 8: 收钱吧 payment + 空中分账 (Phase 8.1 — schema + helpers)
+ * ============================================================ */
+
+let paymentTablesReady = false;
+
+export async function ensurePaymentTables() {
+  if (paymentTablesReady) return;
+  await initializeDatabase();
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS settlement_accounts (
+      id SERIAL PRIMARY KEY,
+      owner_type TEXT NOT NULL,
+      owner_id TEXT NOT NULL,
+      account_type TEXT NOT NULL DEFAULT 'sqb_subacct',
+      sqb_member_id TEXT NOT NULL DEFAULT '',
+      real_name TEXT NOT NULL DEFAULT '',
+      id_card_no_encrypted TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '',
+      account_no_encrypted TEXT NOT NULL DEFAULT '',
+      kyc_status TEXT NOT NULL DEFAULT '待审核',
+      kyc_notes TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT '启用',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL,
+      UNIQUE (owner_type, owner_id, account_type)
+    );
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS payment_split_rules (
+      id SERIAL PRIMARY KEY,
+      scope TEXT NOT NULL DEFAULT 'global',
+      scope_id TEXT NOT NULL DEFAULT '',
+      recipient_type TEXT NOT NULL,
+      recipient_account_id INTEGER REFERENCES settlement_accounts(id) ON DELETE SET NULL,
+      rate_type TEXT NOT NULL,
+      rate_value NUMERIC(12, 4) NOT NULL DEFAULT 0,
+      priority INTEGER NOT NULL DEFAULT 100,
+      status TEXT NOT NULL DEFAULT '启用',
+      remark TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_split_rules_scope ON payment_split_rules(scope, scope_id);`);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS payment_orders (
+      id SERIAL PRIMARY KEY,
+      order_no TEXT NOT NULL UNIQUE,
+      source_type TEXT NOT NULL DEFAULT 'writeoff',
+      source_id INTEGER,
+      company_id INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+      store_id INTEGER REFERENCES company_stores(id) ON DELETE SET NULL,
+      sales_staff_name TEXT NOT NULL DEFAULT '',
+      amount NUMERIC(12, 2) NOT NULL,
+      paid_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT '待支付',
+      pay_way TEXT NOT NULL DEFAULT '',
+      sqb_terminal_sn TEXT NOT NULL DEFAULT '',
+      sqb_client_sn TEXT NOT NULL DEFAULT '',
+      sqb_sn TEXT NOT NULL DEFAULT '',
+      sqb_qr_code TEXT NOT NULL DEFAULT '',
+      paid_at TIMESTAMPTZ,
+      settled_at TIMESTAMPTZ,
+      refunded_at TIMESTAMPTZ,
+      refund_amount NUMERIC(12, 2) NOT NULL DEFAULT 0,
+      payer_uid TEXT NOT NULL DEFAULT '',
+      remark TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_payment_orders_status ON payment_orders(status);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_payment_orders_company ON payment_orders(company_id);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_payment_orders_store ON payment_orders(store_id);`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_payment_orders_sqb_sn ON payment_orders(sqb_sn);`);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS payment_splits (
+      id SERIAL PRIMARY KEY,
+      payment_order_id INTEGER NOT NULL REFERENCES payment_orders(id) ON DELETE CASCADE,
+      rule_id INTEGER REFERENCES payment_split_rules(id) ON DELETE SET NULL,
+      recipient_type TEXT NOT NULL,
+      recipient_account_id INTEGER REFERENCES settlement_accounts(id) ON DELETE SET NULL,
+      amount NUMERIC(12, 2) NOT NULL,
+      status TEXT NOT NULL DEFAULT '待分账',
+      sqb_split_sn TEXT NOT NULL DEFAULT '',
+      splitted_at TIMESTAMPTZ,
+      error_msg TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_payment_splits_order ON payment_splits(payment_order_id);`);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS payment_webhooks (
+      id SERIAL PRIMARY KEY,
+      provider TEXT NOT NULL DEFAULT 'shouqianba',
+      event_type TEXT NOT NULL DEFAULT '',
+      sqb_sn TEXT NOT NULL DEFAULT '',
+      raw_body JSONB NOT NULL DEFAULT '{}'::jsonb,
+      signature TEXT NOT NULL DEFAULT '',
+      signature_valid BOOLEAN NOT NULL DEFAULT FALSE,
+      processed BOOLEAN NOT NULL DEFAULT FALSE,
+      processed_at TIMESTAMPTZ,
+      error_msg TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+  await query(`CREATE INDEX IF NOT EXISTS idx_payment_webhooks_sn ON payment_webhooks(sqb_sn);`);
+
+  // Per-store terminal credentials (returned by SQB /terminal/activate, rotated via /terminal/checkin).
+  await query(`ALTER TABLE company_stores ADD COLUMN IF NOT EXISTS sqb_terminal_sn TEXT NOT NULL DEFAULT '';`);
+  await query(`ALTER TABLE company_stores ADD COLUMN IF NOT EXISTS sqb_terminal_key TEXT NOT NULL DEFAULT '';`);
+  await query(`ALTER TABLE company_stores ADD COLUMN IF NOT EXISTS sqb_device_id TEXT NOT NULL DEFAULT '';`);
+
+  paymentTablesReady = true;
+}
+
+/* ---------- order_no generator ---------- */
+
+async function generatePaymentOrderNo(client, companyCode) {
+  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const prefix = `PAY-${companyCode || 'HQ'}-${today}-`;
+  const res = await client.query(
+    `SELECT order_no FROM payment_orders WHERE order_no LIKE $1 ORDER BY order_no DESC LIMIT 1`,
+    [`${prefix}%`]
+  );
+  const last = res.rows[0]?.order_no ?? '';
+  let next = Number(last.slice(prefix.length)) + 1;
+  if (!Number.isFinite(next) || next <= 0) next = 1;
+  return `${prefix}${String(next).padStart(4, '0')}`;
+}
+
+/* ---------- payment_orders CRUD ---------- */
+
+export async function createPaymentOrder(input) {
+  await ensurePaymentTables();
+  const ts = now();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    let companyCode = 'HQ';
+    if (input.companyId) {
+      const cRow = (
+        await client.query(`SELECT code FROM companies WHERE id = $1`, [
+          Number(input.companyId)
+        ])
+      ).rows[0];
+      if (cRow?.code) companyCode = cRow.code;
+    }
+    const orderNo = await generatePaymentOrderNo(client, companyCode);
+    const result = await client.query(
+      `
+        INSERT INTO payment_orders
+          (order_no, source_type, source_id, company_id, store_id, sales_staff_name,
+           amount, status, sqb_terminal_sn, sqb_client_sn, remark, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, '待支付', $8, $9, $10, $11, $11)
+        RETURNING id, order_no
+      `,
+      [
+        orderNo,
+        input.sourceType ?? 'writeoff',
+        input.sourceId ? Number(input.sourceId) : null,
+        input.companyId ? Number(input.companyId) : null,
+        input.storeId ? Number(input.storeId) : null,
+        input.salesStaffName ?? '',
+        Number(input.amount),
+        input.sqbTerminalSn ?? '',
+        orderNo, // use our order_no as client_sn for SQB (must be globally unique per merchant)
+        input.remark ?? '',
+        ts
+      ]
+    );
+    await client.query('COMMIT');
+    return { id: String(result.rows[0].id), orderNo: result.rows[0].order_no, clientSn: orderNo };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getPaymentOrderById(id) {
+  await ensurePaymentTables();
+  const row = (
+    await query(`SELECT * FROM payment_orders WHERE id = $1`, [Number(id)])
+  ).rows[0];
+  return row ?? null;
+}
+
+export async function getPaymentOrderBySqbSn(sn) {
+  await ensurePaymentTables();
+  const row = (
+    await query(`SELECT * FROM payment_orders WHERE sqb_sn = $1 LIMIT 1`, [sn])
+  ).rows[0];
+  return row ?? null;
+}
+
+export async function getPaymentOrderByClientSn(clientSn) {
+  await ensurePaymentTables();
+  const row = (
+    await query(`SELECT * FROM payment_orders WHERE sqb_client_sn = $1 LIMIT 1`, [clientSn])
+  ).rows[0];
+  return row ?? null;
+}
+
+export async function updatePaymentOrderAfterPrecreate(id, sqbSn, qrCode) {
+  await query(
+    `UPDATE payment_orders SET sqb_sn = $2, sqb_qr_code = $3, updated_at = $4 WHERE id = $1`,
+    [Number(id), sqbSn, qrCode ?? '', now()]
+  );
+}
+
+export async function markPaymentOrderPaid(id, paidAmount, payerUid, payWay, sqbSn) {
+  await query(
+    `
+      UPDATE payment_orders
+         SET status = '已支付',
+             paid_amount = $2,
+             payer_uid = $3,
+             pay_way = $4,
+             sqb_sn = COALESCE(NULLIF($5, ''), sqb_sn),
+             paid_at = COALESCE(paid_at, NOW()),
+             updated_at = NOW()
+       WHERE id = $1 AND status IN ('待支付', '支付中')
+    `,
+    [Number(id), Number(paidAmount), payerUid ?? '', payWay ?? '', sqbSn ?? '']
+  );
+}
+
+export async function markPaymentOrderRefunded(id, refundAmount) {
+  const order = await getPaymentOrderById(id);
+  if (!order) return;
+  const newRefund = Number(order.refund_amount ?? 0) + Number(refundAmount);
+  const fully = newRefund >= Number(order.paid_amount ?? 0);
+  await query(
+    `
+      UPDATE payment_orders
+         SET status = $2,
+             refund_amount = $3,
+             refunded_at = NOW(),
+             updated_at = NOW()
+       WHERE id = $1
+    `,
+    [Number(id), fully ? '已退款' : '部分退款', newRefund]
+  );
+}
+
+/* ---------- terminal credentials per store ---------- */
+
+export async function getStoreTerminal(storeId) {
+  await ensurePaymentTables();
+  if (!storeId) return null;
+  const row = (
+    await query(
+      `SELECT sqb_terminal_sn, sqb_terminal_key, sqb_device_id FROM company_stores WHERE id = $1`,
+      [Number(storeId)]
+    )
+  ).rows[0];
+  if (!row || !row.sqb_terminal_sn) return null;
+  return {
+    terminalSn: row.sqb_terminal_sn,
+    terminalKey: row.sqb_terminal_key,
+    deviceId: row.sqb_device_id
+  };
+}
+
+export async function saveStoreTerminal(storeId, terminalSn, terminalKey, deviceId) {
+  await ensurePaymentTables();
+  await query(
+    `UPDATE company_stores
+        SET sqb_terminal_sn = $2,
+            sqb_terminal_key = $3,
+            sqb_device_id = $4,
+            updated_at = NOW()
+      WHERE id = $1`,
+    [Number(storeId), terminalSn ?? '', terminalKey ?? '', deviceId ?? '']
+  );
+}
+
+/* ---------- split rules + execution log ---------- */
+
+export async function listSplitRulesForContext({ companyId, storeId } = {}) {
+  await ensurePaymentTables();
+  // Match rules in priority order: store > company > global. Return all applicable.
+  const params = [];
+  const conds = [`status = '启用'`];
+  if (storeId) {
+    params.push(String(storeId));
+    conds.push(
+      `(scope = 'global' OR (scope = 'company' AND scope_id = $${params.length - (storeId ? 1 : 0) + 1}) OR (scope = 'store' AND scope_id = $${params.length}))`
+    );
+  } else if (companyId) {
+    params.push(String(companyId));
+    conds.push(`(scope = 'global' OR (scope = 'company' AND scope_id = $${params.length}))`);
+  } else {
+    conds.push(`scope = 'global'`);
+  }
+  const sql = `SELECT * FROM payment_split_rules WHERE ${conds.join(' AND ')} ORDER BY priority ASC, id ASC`;
+  // Build params correctly:
+  const actualParams = [];
+  if (storeId) {
+    actualParams.push(String(companyId ?? ''));
+    actualParams.push(String(storeId));
+  } else if (companyId) {
+    actualParams.push(String(companyId));
+  }
+  const rows = (await query(sql, actualParams)).rows;
+  return rows;
+}
+
+export async function recordPaymentSplit({
+  paymentOrderId,
+  ruleId,
+  recipientType,
+  recipientAccountId,
+  amount
+}) {
+  await ensurePaymentTables();
+  const ts = now();
+  const result = await query(
+    `
+      INSERT INTO payment_splits
+        (payment_order_id, rule_id, recipient_type, recipient_account_id, amount, status, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, '待分账', $6, $6)
+      RETURNING id
+    `,
+    [
+      Number(paymentOrderId),
+      ruleId ? Number(ruleId) : null,
+      recipientType,
+      recipientAccountId ? Number(recipientAccountId) : null,
+      Number(amount),
+      ts
+    ]
+  );
+  return String(result.rows[0].id);
+}
+
+export async function markPaymentSplitDone(id, sqbSplitSn) {
+  await query(
+    `UPDATE payment_splits SET status = '已分账', sqb_split_sn = $2, splitted_at = NOW(), updated_at = NOW() WHERE id = $1`,
+    [Number(id), sqbSplitSn ?? '']
+  );
+}
+
+export async function markPaymentSplitFailed(id, errorMsg) {
+  await query(
+    `UPDATE payment_splits SET status = '失败', error_msg = $2, updated_at = NOW() WHERE id = $1`,
+    [Number(id), String(errorMsg ?? '').slice(0, 500)]
+  );
+}
+
+export async function listPaymentSplits(paymentOrderId) {
+  await ensurePaymentTables();
+  const rows = (
+    await query(
+      `SELECT * FROM payment_splits WHERE payment_order_id = $1 ORDER BY id`,
+      [Number(paymentOrderId)]
+    )
+  ).rows;
+  return rows;
+}
+
+/* ---------- webhook log ---------- */
+
+export async function recordPaymentWebhook({
+  eventType,
+  sqbSn,
+  rawBody,
+  signature,
+  signatureValid
+}) {
+  await ensurePaymentTables();
+  const result = await query(
+    `
+      INSERT INTO payment_webhooks
+        (event_type, sqb_sn, raw_body, signature, signature_valid, created_at)
+      VALUES ($1, $2, $3::jsonb, $4, $5, NOW())
+      RETURNING id
+    `,
+    [
+      eventType ?? '',
+      sqbSn ?? '',
+      JSON.stringify(rawBody ?? {}),
+      signature ?? '',
+      Boolean(signatureValid)
+    ]
+  );
+  return String(result.rows[0].id);
+}
+
+export async function markWebhookProcessed(id, errorMsg) {
+  await query(
+    `UPDATE payment_webhooks SET processed = TRUE, processed_at = NOW(), error_msg = $2 WHERE id = $1`,
+    [Number(id), String(errorMsg ?? '').slice(0, 500)]
+  );
+}
+
+/* ---------- settlement_accounts CRUD ---------- */
+
+export async function listSettlementAccounts({ ownerType, ownerId } = {}) {
+  await ensurePaymentTables();
+  const params = [];
+  const conds = [`status = '启用'`];
+  if (ownerType) {
+    params.push(ownerType);
+    conds.push(`owner_type = $${params.length}`);
+  }
+  if (ownerId) {
+    params.push(String(ownerId));
+    conds.push(`owner_id = $${params.length}`);
+  }
+  const rows = (
+    await query(
+      `SELECT * FROM settlement_accounts WHERE ${conds.join(' AND ')} ORDER BY id`,
+      params
+    )
+  ).rows;
+  return rows;
+}
+
+export async function upsertSettlementAccount(input) {
+  await ensurePaymentTables();
+  const ts = now();
+  const result = await query(
+    `
+      INSERT INTO settlement_accounts
+        (owner_type, owner_id, account_type, sqb_member_id, real_name,
+         id_card_no_encrypted, phone, account_no_encrypted, kyc_status, kyc_notes,
+         status, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, '启用', $11, $11)
+      ON CONFLICT (owner_type, owner_id, account_type) DO UPDATE SET
+        sqb_member_id = EXCLUDED.sqb_member_id,
+        real_name = EXCLUDED.real_name,
+        id_card_no_encrypted = EXCLUDED.id_card_no_encrypted,
+        phone = EXCLUDED.phone,
+        account_no_encrypted = EXCLUDED.account_no_encrypted,
+        kyc_status = EXCLUDED.kyc_status,
+        kyc_notes = EXCLUDED.kyc_notes,
+        updated_at = EXCLUDED.updated_at
+      RETURNING id
+    `,
+    [
+      input.ownerType,
+      String(input.ownerId),
+      input.accountType ?? 'sqb_subacct',
+      input.sqbMemberId ?? '',
+      input.realName ?? '',
+      input.idCardNoEncrypted ?? '',
+      input.phone ?? '',
+      input.accountNoEncrypted ?? '',
+      input.kycStatus ?? '待审核',
+      input.kycNotes ?? '',
+      ts
+    ]
+  );
+  return String(result.rows[0].id);
 }
