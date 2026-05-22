@@ -31,7 +31,32 @@
 
 ### Cron for daily reconciliation
 
-Add a system cron entry (or k8s CronJob, or Vercel Cron) hitting:
+Three options depending on deployment shape — pick one:
+
+**A. In-process (self-host / Docker / k8s long-running Node) — automatic**
+
+Already wired via `apps/admin/src/instrumentation.ts` → `src/lib/cron`.
+Uses `node-cron` v4 inside the Next.js Node server, fires at **00:10 Asia/Shanghai** daily.
+A Redis SETNX lock (`cron-lock:reconcile:YYYY-MM-DD`, 30-min TTL) prevents
+double-firing when running multiple instances. Disable via `CRON_DISABLED=1`,
+override schedule via `CRON_RECONCILE='10 0 * * *'`.
+
+**B. Vercel — config-driven (no code)**
+
+`apps/admin/vercel.json` already ships with the cron config:
+
+```json
+{
+  "crons": [
+    { "path": "/api/admin/payments/reconcile", "schedule": "10 16 * * *" }
+  ]
+}
+```
+
+Vercel cron schedules are in UTC; `10 16 * * *` UTC = 00:10 Asia/Shanghai
+next day. Vercel hits the route automatically; no manual setup required.
+
+**C. External (k8s CronJob / GitHub Actions / 阿里云函数计算 / 任意 HTTP 调度器)**
 
 ```cron
 10 0 * * *  curl -X POST \
@@ -43,8 +68,9 @@ Add a system cron entry (or k8s CronJob, or Vercel Cron) hitting:
 
 Empty body = reconcile yesterday. Pass `{"date":"YYYY-MM-DD"}` to backfill a specific day.
 
-Drifts surface as admin notifications (`type: 'payment.reconciliation.drift'`) +
-detail row in `payment_reconciliation_log` keyed by `run_id`.
+In all three options, drifts surface as admin notifications
+(`type: 'payment.reconciliation.drift'`) + detail row in
+`payment_reconciliation_log` keyed by `run_id`.
 
 ### Terminal activation flow
 

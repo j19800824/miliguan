@@ -29,6 +29,19 @@ export async function register() {
       Sentry.init(sentryOptions);
     }
   }
+
+  // Cron registration — only in long-running Node server, not edge or
+  // build-time. Dynamic import so this code is dead-stripped from the
+  // edge bundle and the build manifest.
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    try {
+      const { registerCronJobs } = await import('./lib/cron');
+      registerCronJobs();
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[instrumentation] failed to register cron jobs', err);
+    }
+  }
 }
 
 export const onRequestError = Sentry.captureRequestError;
