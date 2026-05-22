@@ -18,13 +18,44 @@
 
 - [x] **8.1** DB schema (5 tables + ALTER company_stores for terminal credentials)
 - [x] **8.2** SDK skeleton (client/activate/precreate/query/refund/split + verify)
-- [ ] **8.3** `settlement_accounts` admin CRUD + KYC ops
-- [ ] **8.4** `payment_split_rules` admin CRUD + simulator
-- [ ] **8.5** Mobile PaymentScreen + create endpoint + writeoff→payment flow
-- [ ] **8.6** Webhook receiver + split execution + SSE/Push
-- [ ] **8.7** Refund + reverse split
-- [ ] **8.8** Daily reconciliation cron + drift alert
-- [ ] **8.9** Sandbox E2E + cutover to production keys
+- [ ] **8.3** `settlement_accounts` admin CRUD + KYC ops (skipped — defaults work for v1)
+- [x] **8.4** `payment_split_rules` admin CRUD (`/dashboard/payment-split-rules`)
+- [x] **8.5** Mobile PaymentScreen + create endpoint + writeoff→payment flow
+- [x] **8.6** Webhook receiver + split execution + SSE/Push
+- [x] **8.7** Refund + reverse split
+- [x] **8.8** Daily reconciliation cron + drift alert (manual trigger via `POST /api/admin/payments/reconcile`)
+- [ ] **8.9** Sandbox E2E + cutover to production keys (blocked on user SQB credentials)
+- [x] **Bonus** Terminal activation admin UI (`/dashboard/payment-terminals`)
+
+## Operational Notes
+
+### Cron for daily reconciliation
+
+Add a system cron entry (or k8s CronJob, or Vercel Cron) hitting:
+
+```cron
+10 0 * * *  curl -X POST \
+  -H "Cookie: $ADMIN_SESSION_COOKIE" \
+  -H "Content-Type: application/json" \
+  https://your-admin-host/api/admin/payments/reconcile \
+  -d '{}'
+```
+
+Empty body = reconcile yesterday. Pass `{"date":"YYYY-MM-DD"}` to backfill a specific day.
+
+Drifts surface as admin notifications (`type: 'payment.reconciliation.drift'`) +
+detail row in `payment_reconciliation_log` keyed by `run_id`.
+
+### Terminal activation flow
+
+1. In 收钱吧 商户后台 → 终端管理 → 添加终端 → copy activation code
+2. Visit `/dashboard/payment-terminals`, find the store row, click **激活收钱吧终端**
+3. Paste the activation code + (optional) terminal display name
+4. Submit → backend calls `/terminal/activate` with vendor credentials,
+   receives `terminal_sn` + `terminal_key`, persists to `company_stores.sqb_*`
+
+Re-activation overwrites existing terminal credentials (use this if SQB
+rotates terminal_key out-of-band).
 
 ---
 

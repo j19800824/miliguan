@@ -9983,3 +9983,308 @@ export async function upsertSettlementAccount(input) {
   );
   return String(result.rows[0].id);
 }
+
+/* ============================================================
+ * Stage 8 Phase 8.8: 对账 cron + 漂移检测
+ * ============================================================ */
+
+let reconciliationTableReady = false;
+
+export async function ensureReconciliationTable() {
+  if (reconciliationTableReady) return;
+  await ensurePaymentTables();
+  await query(`
+    CREATE TABLE IF NOT EXISTS payment_reconciliation_log (
+      id SERIAL PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      run_date DATE NOT NULL,
+      payment_order_id INTEGER REFERENCES payment_orders(id) ON DELETE SET NULL,
+      order_no TEXT NOT NULL DEFAULT '',
+      sqb_sn TEXT NOT NULL DEFAULT '',
+      our_status TEXT NOT NULL DEFAULT '',
+      sqb_status TEXT NOT NULL DEFAULT '',
+      drift_type TEXT NOT NULL,
+      action_taken TEXT NOT NULL DEFAULT '',
+      raw_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_payment_reconciliation_log_run ON payment_reconciliation_log(run_id);`
+  );
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_payment_reconciliation_log_date ON payment_reconciliation_log(run_date);`
+  );
+  reconciliationTableReady = true;
+}
+
+export async function listPaymentsForReconciliation(date) {
+  await ensurePaymentTables();
+  // Paid + already-split orders settled on the target date are the
+  // candidates we want SQB to confirm. We also include 已退款/部分退款
+  // so refund drift gets caught.
+  const rows = (
+    await query(
+      `
+        SELECT po.id, po.order_no, po.status, po.sqb_sn, po.sqb_client_sn,
+               po.amount, po.paid_amount, po.refund_amount, po.store_id,
+               po.paid_at, po.refunded_at
+        FROM payment_orders po
+        WHERE (
+          (po.paid_at IS NOT NULL AND po.paid_at::date = $1::date)
+          OR (po.refunded_at IS NOT NULL AND po.refunded_at::date = $1::date)
+        )
+        AND po.sqb_sn NOT LIKE 'MOCK-%'
+        ORDER BY po.id
+      `,
+      [date]
+    )
+  ).rows;
+  return rows;
+}
+
+export async function recordReconciliationDrift({
+  runId,
+  runDate,
+  paymentOrderId,
+  orderNo,
+  sqbSn,
+  ourStatus,
+  sqbStatus,
+  driftType,
+  actionTaken,
+  rawResponse
+}) {
+  await ensureReconciliationTable();
+  await query(
+    `
+      INSERT INTO payment_reconciliation_log
+        (run_id, run_date, payment_order_id, order_no, sqb_sn,
+         our_status, sqb_status, drift_type, action_taken, raw_response, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, NOW())
+    `,
+    [
+      runId,
+      runDate,
+      paymentOrderId ? Number(paymentOrderId) : null,
+      orderNo ?? '',
+      sqbSn ?? '',
+      ourStatus ?? '',
+      sqbStatus ?? '',
+      driftType,
+      actionTaken ?? '',
+      JSON.stringify(rawResponse ?? {})
+    ]
+  );
+}
+
+export async function getLatestReconciliationRun() {
+  await ensureReconciliationTable();
+  const row = (
+    await query(
+      `SELECT run_id, run_date, COUNT(*)::int AS drift_count, MAX(created_at) AS finished_at
+       FROM payment_reconciliation_log
+       GROUP BY run_id, run_date
+       ORDER BY MAX(created_at) DESC
+       LIMIT 1`
+    )
+  ).rows[0];
+  return row ?? null;
+}
+
+export async function listReconciliationDriftsByRun(runId) {
+  await ensureReconciliationTable();
+  const rows = (
+    await query(
+      `SELECT * FROM payment_reconciliation_log WHERE run_id = $1 ORDER BY id`,
+      [runId]
+    )
+  ).rows;
+  return rows;
+}
+
+/* ============================================================
+ * Stage 8: store terminal listing for admin UI
+ * ============================================================ */
+
+export async function listAllSplitRules({ scope } = {}) {
+  await ensurePaymentTables();
+  const params = [];
+  const conds = [];
+  if (scope) {
+    params.push(scope);
+    conds.push(`scope = $${params.length}`);
+  }
+  const sql = `
+    SELECT psr.id, psr.scope, psr.scope_id, psr.recipient_type,
+           psr.recipient_account_id, psr.rate_type, psr.rate_value,
+           psr.priority, psr.status, psr.remark,
+           psr.created_at, psr.updated_at,
+           sa.real_name AS recipient_real_name,
+           sa.owner_type AS recipient_owner_type
+    FROM payment_split_rules psr
+    LEFT JOIN settlement_accounts sa ON sa.id = psr.recipient_account_id
+    ${conds.length > 0 ? 'WHERE ' + conds.join(' AND ') : ''}
+    ORDER BY psr.priority ASC, psr.id ASC
+  `;
+  const rows = (await query(sql, params)).rows;
+  return rows.map((r) => ({
+    id: String(r.id),
+    scope: r.scope,
+    scopeId: r.scope_id ?? '',
+    recipientType: r.recipient_type,
+    recipientAccountId: r.recipient_account_id ? String(r.recipient_account_id) : '',
+    recipientName: r.recipient_real_name ?? '',
+    rateType: r.rate_type,
+    rateValue: Number(r.rate_value ?? 0),
+    priority: Number(r.priority ?? 100),
+    status: r.status,
+    remark: r.remark ?? '',
+    createdAt: r.created_at,
+    updatedAt: r.updated_at
+  }));
+}
+
+export async function createSplitRule(input) {
+  await ensurePaymentTables();
+  const ts = now();
+  const result = await query(
+    `
+      INSERT INTO payment_split_rules
+        (scope, scope_id, recipient_type, recipient_account_id, rate_type,
+         rate_value, priority, status, remark, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $10)
+      RETURNING id
+    `,
+    [
+      input.scope ?? 'global',
+      input.scopeId ?? '',
+      input.recipientType,
+      input.recipientAccountId ? Number(input.recipientAccountId) : null,
+      input.rateType,
+      Number(input.rateValue ?? 0),
+      Number(input.priority ?? 100),
+      input.status ?? '启用',
+      input.remark ?? '',
+      ts
+    ]
+  );
+  return String(result.rows[0].id);
+}
+
+export async function updateSplitRule(id, input) {
+  await ensurePaymentTables();
+  const updates = [];
+  const params = [Number(id)];
+  if (input.scope !== undefined) {
+    params.push(input.scope);
+    updates.push(`scope = $${params.length}`);
+  }
+  if (input.scopeId !== undefined) {
+    params.push(input.scopeId);
+    updates.push(`scope_id = $${params.length}`);
+  }
+  if (input.recipientType !== undefined) {
+    params.push(input.recipientType);
+    updates.push(`recipient_type = $${params.length}`);
+  }
+  if (input.recipientAccountId !== undefined) {
+    params.push(input.recipientAccountId ? Number(input.recipientAccountId) : null);
+    updates.push(`recipient_account_id = $${params.length}`);
+  }
+  if (input.rateType !== undefined) {
+    params.push(input.rateType);
+    updates.push(`rate_type = $${params.length}`);
+  }
+  if (input.rateValue !== undefined) {
+    params.push(Number(input.rateValue));
+    updates.push(`rate_value = $${params.length}`);
+  }
+  if (input.priority !== undefined) {
+    params.push(Number(input.priority));
+    updates.push(`priority = $${params.length}`);
+  }
+  if (input.status !== undefined) {
+    params.push(input.status);
+    updates.push(`status = $${params.length}`);
+  }
+  if (input.remark !== undefined) {
+    params.push(input.remark);
+    updates.push(`remark = $${params.length}`);
+  }
+  if (updates.length === 0) return;
+  params.push(now());
+  updates.push(`updated_at = $${params.length}`);
+  await query(
+    `UPDATE payment_split_rules SET ${updates.join(', ')} WHERE id = $1`,
+    params
+  );
+}
+
+export async function deleteSplitRule(id) {
+  await ensurePaymentTables();
+  // Soft-delete via status flip — preserves audit trail in payment_splits.
+  await query(
+    `UPDATE payment_split_rules SET status = '停用', updated_at = $2 WHERE id = $1`,
+    [Number(id), now()]
+  );
+}
+
+export async function getSplitRuleById(id) {
+  await ensurePaymentTables();
+  const row = (
+    await query(`SELECT * FROM payment_split_rules WHERE id = $1`, [Number(id)])
+  ).rows[0];
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    scope: row.scope,
+    scopeId: row.scope_id ?? '',
+    recipientType: row.recipient_type,
+    recipientAccountId: row.recipient_account_id ? String(row.recipient_account_id) : '',
+    rateType: row.rate_type,
+    rateValue: Number(row.rate_value ?? 0),
+    priority: Number(row.priority ?? 100),
+    status: row.status,
+    remark: row.remark ?? ''
+  };
+}
+
+export async function listStoresWithSqbTerminal({ search = '' } = {}) {
+  await ensurePaymentTables();
+  const params = [];
+  const conds = [`company_stores.delete_status = '正常'`];
+  if (search) {
+    params.push(`%${search}%`);
+    conds.push(
+      `(company_stores.name ILIKE $${params.length} OR companies.name ILIKE $${params.length} OR company_stores.manager_phone ILIKE $${params.length})`
+    );
+  }
+  const rows = (
+    await query(
+      `
+        SELECT company_stores.id, company_stores.name AS store_name,
+               company_stores.manager_name, company_stores.manager_phone,
+               company_stores.sqb_terminal_sn, company_stores.sqb_device_id,
+               companies.id AS company_id, companies.name AS company_name
+        FROM company_stores
+        INNER JOIN companies ON companies.id = company_stores.company_id
+        WHERE ${conds.join(' AND ')}
+        ORDER BY companies.name, company_stores.id
+        LIMIT 500
+      `,
+      params
+    )
+  ).rows;
+  return rows.map((r) => ({
+    id: String(r.id),
+    storeName: r.store_name ?? '',
+    companyId: String(r.company_id ?? ''),
+    companyName: r.company_name ?? '',
+    managerName: r.manager_name ?? '',
+    managerPhone: r.manager_phone ?? '',
+    sqbTerminalSn: r.sqb_terminal_sn ?? '',
+    sqbDeviceId: r.sqb_device_id ?? '',
+    activated: Boolean(r.sqb_terminal_sn)
+  }));
+}
