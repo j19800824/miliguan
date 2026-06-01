@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "packageManager": "pnpm@10.15.0",
   "scripts": {
+    "preinstall": "node ./scripts/only-pnpm.cjs",
     "dev": "turbo dev",
     "dev:mobile": "pnpm --filter mobile dev",
     "dev:admin": "pnpm --filter @miliguan/admin dev",
