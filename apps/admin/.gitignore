@@ -24,8 +24,10 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
-.env*
+# env files — commit non-secret per-env defaults (.env.development / .env.production),
+# but never commit machine-local secrets.
+.env
+.env.local
 .env*.local
 
 # vercel

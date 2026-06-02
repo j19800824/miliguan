@@ -465,7 +465,6 @@ async function createTables() {
       name TEXT NOT NULL,
       code TEXT NOT NULL UNIQUE,
       address TEXT NOT NULL,
-      manager_staff_id INTEGER REFERENCES admin_staff(id) ON DELETE SET NULL,
       manager_name TEXT NOT NULL,
       manager_phone TEXT NOT NULL DEFAULT '',
       available_order_quota NUMERIC(12, 2) NOT NULL DEFAULT 0,
