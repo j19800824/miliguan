@@ -5,38 +5,76 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { DEMO_CREDENTIALS, SECONDARY_CREDENTIALS } from '@/lib/auth/shared';
 import { cn } from '@/lib/utils';
 import { Metadata } from 'next';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { FormEvent, useState, useTransition } from 'react';
+import { FormEvent, useEffect, useState, useTransition } from 'react';
 import { InteractiveGridPattern } from './interactive-grid';
 
 export const metadata: Metadata = {
   title: '米粒冠后台登录',
-  description: '米粒冠后台本地开发登录页'
+  description: '米粒冠后台手机号 + 短信验证码登录'
 };
+
+const PHONE_PATTERN = /^1\d{10}$/;
 
 export default function SignInViewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [account, setAccount] = useState(DEMO_CREDENTIALS.account);
-  const [password, setPassword] = useState(DEMO_CREDENTIALS.password);
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [countdown, setCountdown] = useState(0);
+  const [sending, setSending] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const redirectTo = searchParams.get('redirectTo') || '/dashboard/overview';
+  const phoneValid = PHONE_PATTERN.test(phone.trim());
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
 
   const readErrorMessage = async (response: Response) => {
     const clonedResponse = response.clone();
-
     try {
       const body = (await response.json()) as { message?: string };
-      return body.message ?? '登录失败，请重试';
+      return body.message ?? '操作失败，请重试';
     } catch {
       const text = await clonedResponse.text().catch(() => '');
-      return text || `登录失败（${response.status}），请检查服务端日志`;
+      return text || `操作失败（${response.status}），请检查服务端日志`;
+    }
+  };
+
+  const handleSendCode = async () => {
+    setError('');
+    setNotice('');
+    if (!phoneValid) {
+      setError('请输入有效的 11 位手机号');
+      return;
+    }
+    setSending(true);
+    try {
+      const response = await fetch('/api/auth/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phone.trim() })
+      });
+      if (!response.ok) {
+        setError(await readErrorMessage(response));
+        return;
+      }
+      const body = (await response.json()) as { resendAfter?: number; message?: string };
+      setCountdown(body.resendAfter ?? 60);
+      setNotice(body.message ?? '验证码已发送，请注意查收');
+    } catch {
+      setError('网络异常，验证码发送失败');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -47,10 +85,8 @@ export default function SignInViewPage() {
     startTransition(async () => {
       const response = await fetch('/api/auth/sign-in', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ account, password })
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: phone.trim(), code: code.trim() })
       });
 
       if (!response.ok) {
@@ -96,48 +132,69 @@ export default function SignInViewPage() {
       <div className='flex h-full items-center justify-center p-4 lg:p-8'>
         <div className='flex w-full max-w-md flex-col items-center justify-center space-y-6'>
           <Card className='w-full'>
-              <CardHeader>
-                <CardTitle>登录米粒冠后台</CardTitle>
-                <CardDescription>当前已接入本地 PostgreSQL + Redis 员工账号，可体验不同角色的菜单和权限差异。</CardDescription>
-              </CardHeader>
+            <CardHeader>
+              <CardTitle>登录米粒冠后台</CardTitle>
+              <CardDescription>请使用绑定的手机号 + 短信验证码登录。</CardDescription>
+            </CardHeader>
             <CardContent>
               <form className='space-y-4' onSubmit={handleSubmit}>
                 <div className='space-y-2'>
-                  <Label htmlFor='account'>账号</Label>
+                  <Label htmlFor='phone'>手机号</Label>
                   <Input
-                    id='account'
-                    value={account}
-                    onChange={(event) => setAccount(event.target.value)}
+                    id='phone'
+                    inputMode='numeric'
+                    autoComplete='tel'
+                    maxLength={11}
+                    placeholder='请输入 11 位手机号'
+                    value={phone}
+                    onChange={(event) => setPhone(event.target.value.replace(/\D/g, ''))}
                   />
                 </div>
                 <div className='space-y-2'>
-                  <Label htmlFor='password'>密码</Label>
-                  <Input
-                    id='password'
-                    type='password'
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                  />
+                  <Label htmlFor='code'>验证码</Label>
+                  <div className='flex gap-2'>
+                    <Input
+                      id='code'
+                      inputMode='numeric'
+                      autoComplete='one-time-code'
+                      maxLength={6}
+                      placeholder='请输入验证码'
+                      value={code}
+                      onChange={(event) => setCode(event.target.value.replace(/\D/g, ''))}
+                    />
+                    <Button
+                      type='button'
+                      variant='outline'
+                      className='shrink-0 whitespace-nowrap'
+                      disabled={!phoneValid || sending || countdown > 0}
+                      onClick={handleSendCode}
+                    >
+                      {countdown > 0 ? `${countdown}s 后重发` : sending ? '发送中...' : '获取验证码'}
+                    </Button>
+                  </div>
                 </div>
+                {notice ? (
+                  <Alert>
+                    <AlertTitle>提示</AlertTitle>
+                    <AlertDescription>{notice}</AlertDescription>
+                  </Alert>
+                ) : null}
                 {error ? (
                   <Alert variant='destructive'>
                     <AlertTitle>登录失败</AlertTitle>
                     <AlertDescription>{error}</AlertDescription>
                   </Alert>
                 ) : null}
-                <Button className='w-full' type='submit' disabled={isPending}>
+                <Button
+                  className='w-full'
+                  type='submit'
+                  disabled={isPending || !phoneValid || code.trim().length < 4}
+                >
                   {isPending ? '登录中...' : '进入后台'}
                 </Button>
               </form>
             </CardContent>
           </Card>
-          <Alert className='w-full text-sm'>
-            <AlertTitle>测试账号</AlertTitle>
-            <AlertDescription>
-              默认管理员：`{DEMO_CREDENTIALS.account}` / `{DEMO_CREDENTIALS.password}`；其他角色：
-              {SECONDARY_CREDENTIALS.map((item) => ` ${item.label}(${item.account}/${item.password})`).join('，')}
-            </AlertDescription>
-          </Alert>
         </div>
       </div>
     </div>

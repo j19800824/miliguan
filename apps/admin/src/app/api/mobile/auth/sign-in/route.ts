@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSession, getMobileAdminByAccount } from '@/lib/database.js';
+import { createSession, getMobileAdminByPhone, verifyLoginOtp } from '@/lib/database.js';
 import { signAdminJwt } from '@/lib/auth/jwt';
 import { auditRoute } from '@/lib/audit';
 
@@ -9,11 +9,19 @@ export async function POST(req: Request) {
     action: '移动端登录',
     handler: async () => {
       try {
-        const body = (await req.json()) as { account?: string; password?: string };
-        const user = await getMobileAdminByAccount(body.account ?? '', body.password ?? '');
+        const body = (await req.json()) as { phone?: string; code?: string };
+        const phone = (body.phone ?? '').trim();
 
+        const user = await getMobileAdminByPhone(phone);
         if (!user) {
-          return NextResponse.json({ message: '账号或密码不正确' }, { status: 401 });
+          return NextResponse.json({ message: '该手机号未绑定账号' }, { status: 401 });
+        }
+
+        try {
+          await verifyLoginOtp(phone, body.code ?? '');
+        } catch (verifyError) {
+          const message = verifyError instanceof Error ? verifyError.message : '验证码校验失败';
+          return NextResponse.json({ message }, { status: 401 });
         }
 
         const sessionId = await createSession(user.id);

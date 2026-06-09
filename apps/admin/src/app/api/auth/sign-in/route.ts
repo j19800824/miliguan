@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSession, getAdminByAccount } from '@/lib/database.js';
+import { createSession, getAdminByPhone, verifyLoginOtp } from '@/lib/database.js';
 import { signAdminJwt } from '@/lib/auth/jwt';
 import { ADMIN_IDLE_MAX_AGE, ADMIN_SESSION_COOKIE } from '@/lib/auth/shared';
 import { auditRoute } from '@/lib/audit';
@@ -10,11 +10,20 @@ export async function POST(req: Request) {
     action: '后台登录',
     handler: async () => {
       try {
-        const body = (await req.json()) as { account?: string; password?: string };
-        const user = await getAdminByAccount(body.account ?? '', body.password ?? '');
+        const body = (await req.json()) as { phone?: string; code?: string };
+        const phone = (body.phone ?? '').trim();
 
+        // 先确认手机号已绑定后台账号，避免给未注册号码暴露验证码校验细节。
+        const user = await getAdminByPhone(phone);
         if (!user) {
-          return NextResponse.json({ message: '账号或密码不正确' }, { status: 401 });
+          return NextResponse.json({ message: '该手机号未绑定后台账号' }, { status: 401 });
+        }
+
+        try {
+          await verifyLoginOtp(phone, body.code ?? '');
+        } catch (verifyError) {
+          const message = verifyError instanceof Error ? verifyError.message : '验证码校验失败';
+          return NextResponse.json({ message }, { status: 401 });
         }
 
         const sessionId = await createSession(user.id);

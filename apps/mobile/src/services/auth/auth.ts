@@ -113,14 +113,37 @@ function roleAvatar(role: Role): string {
   }
 }
 
-export async function login(account: string, password: string): Promise<AuthUser> {
+/**
+ * 发送登录验证码。返回服务端提示信息与重发间隔（秒）。
+ */
+export async function sendLoginCode(
+  phone: string,
+): Promise<{ resendAfter: number; message: string }> {
+  if (shouldUseMocks()) {
+    throw new Error('Mock mode: 使用角色卡片登录');
+  }
+  const apiClient = getApiClient();
+  const data = await apiClient<{ resendAfter?: number; message?: string }>(
+    '/api/mobile/auth/send-code',
+    {
+      method: 'POST',
+      body: JSON.stringify({ phone }),
+    },
+  );
+  return {
+    resendAfter: data.resendAfter ?? 60,
+    message: data.message ?? '验证码已发送，请注意查收',
+  };
+}
+
+export async function login(phone: string, code: string): Promise<AuthUser> {
   if (shouldUseMocks()) {
     throw new Error('Mock mode: 使用角色卡片登录');
   }
   const apiClient = getApiClient();
   const data = await apiClient<SignInResponse>('/api/mobile/auth/sign-in', {
     method: 'POST',
-    body: JSON.stringify({ account, password }),
+    body: JSON.stringify({ phone, code }),
   });
   await saveToken(data.token);
   setApiToken(data.token);

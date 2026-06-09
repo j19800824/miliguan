@@ -1,12 +1,11 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomInt } from 'node:crypto';
 import { Pool } from 'pg';
 import { createClient } from 'redis';
 import { hashPassword, isPasswordHash, verifyPassword } from './auth/password.js';
 import {
-  formatAccountSmsResult,
   generateAccountPassword,
   isMainlandMobile,
-  sendAccountPasswordSmsSafe
+  sendLoginCodeSmsSafe
 } from './sms.js';
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -42,6 +41,12 @@ if (process.env.NODE_ENV !== 'production') {
 let redisReadyPromise;
 let initializedPromise;
 const SESSION_TTL_SECONDS = 60 * 60;
+
+// ----- 登录验证码（OTP）配置 -----
+const OTP_CODE_TTL_SECONDS = 300; // 验证码有效期 5 分钟
+const OTP_RESEND_TTL_SECONDS = 60; // 60 秒重发锁
+const OTP_MAX_ATTEMPTS = 5; // 校验失败上限
+const OTP_LOCK_TTL_SECONDS = 600; // 超过上限锁定 10 分钟
 
 function now() {
   return new Date().toISOString();
@@ -1037,6 +1042,12 @@ async function migrateTables() {
     ALTER TABLE admin_staff
     ADD COLUMN IF NOT EXISTS login_scope TEXT NOT NULL DEFAULT 'admin'
   `);
+  // 验证码登录：把 admin 超管手机号迁移为绑定的真实号码（幂等）。
+  await query(`
+    UPDATE admin_staff
+    SET phone = '13601667307'
+    WHERE account = 'admin' AND phone <> '13601667307'
+  `);
   await query(`
     ALTER TABLE product_change_requests
     ADD COLUMN IF NOT EXISTS request_note TEXT NOT NULL DEFAULT ''
@@ -1532,13 +1543,14 @@ async function seedAdminStaff() {
   const companyMap = Object.fromEntries(companies.map((item) => [item.code, item.id]));
   const stores = (await query('SELECT id, code FROM company_stores')).rows;
   const storeMap = Object.fromEntries(stores.map((item) => [item.code, item.id]));
+  // 验证码登录：admin 超管绑定真实手机号 13601667307；其余种子账号用假号 138000000xx。
   const staff = [
-    ['林可', 'admin', 'admin123', '产品技术中心', roleMap['超级管理员'], null, null, '在职', '13800122233', 'linke@miliguan.local', '今天 09:21'],
-    ['赵晴', 'operator', 'operator123', '总部运营部', roleMap['总部运营'], companyMap['BR-EAST-001'], null, '在职', '13911232211', 'zhaoqing@miliguan.local', '今天 10:05'],
-    ['周筱', 'auditor', 'auditor123', '总部审核组', roleMap['总部审核员'], null, null, '在职', '13722090021', 'zhouxiao@miliguan.local', '昨天 18:42'],
-    ['郑南', 'product', 'product123', '商品中心', roleMap['商品管理员'], null, null, '在职', '13688912032', 'zhengnan@miliguan.local', '昨天 14:16'],
-    ['陈卓', 'branch', 'branch123', '华东分公司', roleMap['分公司管理员'], companyMap['BR-EAST-001'], storeMap['ST-EAST-001'], '在职', '13577881209', 'chenzhuo@miliguan.local', '今天 08:48'],
-    ['吴敏', 'boss', 'boss123', '经营管理中心', roleMap['老板视图账号'], null, null, '在职', '13677701120', 'wumin@miliguan.local', '2026-04-03 09:12']
+    ['林可', 'admin', 'admin123', '产品技术中心', roleMap['超级管理员'], null, null, '在职', '13601667307', 'linke@miliguan.local', '今天 09:21'],
+    ['赵晴', 'operator', 'operator123', '总部运营部', roleMap['总部运营'], companyMap['BR-EAST-001'], null, '在职', '13800000001', 'zhaoqing@miliguan.local', '今天 10:05'],
+    ['周筱', 'auditor', 'auditor123', '总部审核组', roleMap['总部审核员'], null, null, '在职', '13800000002', 'zhouxiao@miliguan.local', '昨天 18:42'],
+    ['郑南', 'product', 'product123', '商品中心', roleMap['商品管理员'], null, null, '在职', '13800000003', 'zhengnan@miliguan.local', '昨天 14:16'],
+    ['陈卓', 'branch', 'branch123', '华东分公司', roleMap['分公司管理员'], companyMap['BR-EAST-001'], storeMap['ST-EAST-001'], '在职', '13800000004', 'chenzhuo@miliguan.local', '今天 08:48'],
+    ['吴敏', 'boss', 'boss123', '经营管理中心', roleMap['老板视图账号'], null, null, '在职', '13800000005', 'wumin@miliguan.local', '2026-04-03 09:12']
   ];
 
   for (const item of staff) {
@@ -3162,6 +3174,61 @@ export async function getAppAdminByAccount(account, password) {
 
 export async function getMobileAdminByAccount(account, password) {
   return getStaffByAccount(account, password, 'mobile');
+}
+
+/**
+ * 按手机号查找在职员工（验证码登录使用，不校验密码）。
+ * loginScope: 'admin' = 后台（排除门店 App 账号）；'mobile' = 移动端（任意 scope）。
+ */
+async function getStaffByPhone(phone, loginScope = 'admin') {
+  await initializeDatabase();
+  const normalizedPhone = String(phone ?? '').trim();
+  if (!isMainlandMobile(normalizedPhone)) return null;
+  const scopeClause =
+    loginScope === 'app'
+      ? "AND admin_staff.login_scope = 'app'"
+      : loginScope === 'mobile'
+        ? ''
+        : "AND admin_staff.login_scope != 'app'";
+  const result = await query(
+    `
+      SELECT
+        admin_staff.id,
+        admin_staff.name,
+        admin_staff.account,
+        admin_staff.department,
+        admin_staff.status,
+        admin_staff.phone,
+        admin_staff.email,
+        admin_staff.last_login,
+        admin_staff.company_id,
+        admin_staff.store_id,
+        roles.id AS role_id,
+        roles.role_name,
+        roles.scope AS role_scope
+      FROM admin_staff
+      LEFT JOIN roles ON roles.id = admin_staff.role_id
+      WHERE admin_staff.phone = $1
+        AND admin_staff.status != '停用'
+        AND admin_staff.delete_status = '正常'
+        ${scopeClause}
+      ORDER BY admin_staff.id ASC
+      LIMIT 1
+    `,
+    [normalizedPhone]
+  );
+  const row = result.rows[0];
+  if (!row) return null;
+  const permissions = await getPermissionsByRoleId(row.role_id);
+  return mapAdminUser(row, permissions);
+}
+
+export async function getAdminByPhone(phone) {
+  return getStaffByPhone(phone, 'admin');
+}
+
+export async function getMobileAdminByPhone(phone) {
+  return getStaffByPhone(phone, 'mobile');
 }
 
 export async function getAdminById(id) {
@@ -6560,24 +6627,18 @@ export async function createCompanyStore(companyId, payload, actorName = '后台
     );
     await client.query('COMMIT');
 
-    const smsResult = await sendAccountPasswordSmsSafe({
-      phone: managerPhone,
-      name: managerName,
-      account: managerPhone,
-      password: initialPassword,
-      scene: '门店负责人账号创建'
-    });
+    // 验证码登录：不再下发密码短信，门店负责人用手机号 + 验证码登录。
     await appendApprovalLog({
       entityType: 'company_store',
       entityId: result.rows[0].id,
       action: '新增门店',
       result: '已创建',
-      note: `自动创建门店 App 负责人账号 ${managerPhone}，${smsResult.sent ? '账号密码短信已发送' : `短信未发送：${smsResult.message}`}`,
+      note: `自动创建门店 App 负责人账号 ${managerPhone}，负责人可使用该手机号 + 短信验证码登录`,
       createdBy: actorName
     });
     return {
       id: result.rows[0].id,
-      message: formatAccountSmsResult('门店创建成功，负责人账号已自动创建', smsResult)
+      message: `门店创建成功，负责人账号已自动创建，可使用手机号 ${managerPhone} + 短信验证码登录`
     };
   } catch (error) {
     await client.query('ROLLBACK');
@@ -7976,19 +8037,17 @@ export async function createRecord(entity, payload, actorName = '后台用户', 
         throw new Error('不支持的资源类型');
       }
       const timestamp = now();
-      let smsResult = null;
       let normalizedPayload = payload;
       if (entity === 'staff') {
         const phone = String(payload.phone ?? '').trim();
         if (!isMainlandMobile(phone)) {
-          throw new Error('请填写 11 位员工手机号，用于发送初始密码短信');
+          throw new Error('请填写 11 位员工手机号，员工将使用该手机号 + 短信验证码登录');
         }
-        const initialPassword = generateAccountPassword();
+        // 验证码登录：不再下发密码，仅为 NOT NULL 约束生成一个不可用的随机密码占位。
         normalizedPayload = {
           ...payload,
           phone,
-          password: await hashPassword(initialPassword),
-          __plainInitialPassword: initialPassword
+          password: await hashPassword(generateAccountPassword())
         };
       }
       const values = config.normalize(normalizedPayload);
@@ -7997,20 +8056,11 @@ export async function createRecord(entity, payload, actorName = '后台用户', 
         [...values, timestamp, timestamp]
       );
       await markUpdatedBy(config.table, result.rows[0].id, actorName);
-      if (entity === 'staff') {
-        smsResult = await sendAccountPasswordSmsSafe({
-          phone: normalizedPayload.phone,
-          name: normalizedPayload.name,
-          account: normalizedPayload.account,
-          password: normalizedPayload.__plainInitialPassword,
-          scene: '后台员工账号创建'
-        });
-      }
       return {
         id: result.rows[0].id,
         message:
           entity === 'staff'
-            ? formatAccountSmsResult('员工账号创建成功', smsResult)
+            ? `员工账号创建成功，可使用手机号 ${normalizedPayload.phone} + 短信验证码登录`
             : '新增成功'
       };
     }
@@ -8198,42 +8248,12 @@ export async function updateStaffStatus(id, status, actorName = '后台用户') 
   ]);
 }
 
-export async function resetStaffPassword(id, password = generateAccountPassword(), actorName = '后台用户') {
-  await initializeDatabase();
-  const staff = (
-    await query(
-      `
-        SELECT id, name, account, phone
-        FROM admin_staff
-        WHERE id = $1 AND delete_status = '正常'
-      `,
-      [Number(id)]
-    )
-  ).rows[0];
-
-  if (!staff) {
-    throw new Error('员工不存在');
-  }
-  if (!isMainlandMobile(staff.phone)) {
-    throw new Error('员工手机号无效，无法发送密码短信');
-  }
-
-  const nextPassword = String(password || generateAccountPassword());
-  const hashedPassword = await hashPassword(nextPassword);
-  await query('UPDATE admin_staff SET password = $1, updated_by = $2, updated_at = $3 WHERE id = $4', [
-    hashedPassword,
-    actorName,
-    now(),
-    Number(id)
-  ]);
-  const smsResult = await sendAccountPasswordSmsSafe({
-    phone: staff.phone,
-    name: staff.name,
-    account: staff.account,
-    password: nextPassword,
-    scene: '后台员工密码重置'
-  });
-  return { message: formatAccountSmsResult('已生成新的随机密码', smsResult) };
+/**
+ * @deprecated 系统已改为手机号 + 短信验证码登录，密码登录已弃用，无需也无法重置密码。
+ * 保留导出仅为兼容旧调用点；调用即抛出明确提示。
+ */
+export async function resetStaffPassword() {
+  throw new Error('系统已改为短信验证码登录，密码功能已弃用，无需重置密码');
 }
 
 export async function changeAdminPassword(id, currentPassword, nextPassword) {
@@ -8301,6 +8321,131 @@ export async function deleteSession(sessionId) {
   await initializeDatabase();
   const client = await ensureRedis();
   await client.del(`admin:session:${sessionId}`);
+}
+
+/* ============================================================
+ * 登录验证码（OTP）
+ * ============================================================ */
+
+/**
+ * 硬编码（万能）验证码开关。
+ *
+ * 安全约束：真正的正式环境（NODE_ENV=production 且未显式打开 dev 标记）
+ * **永远**不允许万能验证码，确保线上无后门。测试环境若需要，可显式设置
+ * OTP_DEV_BYPASS=true 并配置 OTP_DEV_BYPASS_CODE。两个条件缺一不可，
+ * 即使在 prod 误设了 CODE 但没设 OTP_DEV_BYPASS 也不会生效。
+ */
+function getOtpDevBypass() {
+  const isProd = process.env.NODE_ENV === 'production';
+  const flagged = process.env.OTP_DEV_BYPASS === 'true';
+  const code = String(process.env.OTP_DEV_BYPASS_CODE || '').trim();
+  const enabled = (!isProd || flagged) && code.length > 0;
+  return { enabled, code };
+}
+
+function normalizePhone(phone) {
+  return String(phone ?? '').trim();
+}
+
+/**
+ * 发送登录验证码：校验手机号 → 重发限流（60s）→ 生成 6 位码写入 Redis（300s）
+ * → 下发短信。正式环境短信发送失败会回滚限流并抛错，便于用户立即重试。
+ */
+export async function requestLoginOtp(phone) {
+  await initializeDatabase();
+  const normalizedPhone = normalizePhone(phone);
+  if (!isMainlandMobile(normalizedPhone)) {
+    throw new Error('请输入有效的 11 位手机号');
+  }
+
+  const client = await ensureRedis();
+  const resendKey = `otp:resend:${normalizedPhone}`;
+  const resendTtl = await client.ttl(resendKey);
+  if (resendTtl > 0) {
+    throw new Error(`请 ${resendTtl} 秒后再获取验证码`);
+  }
+
+  const bypass = getOtpDevBypass();
+  const code = String(randomInt(0, 1000000)).padStart(6, '0');
+  await client.set(`otp:code:${normalizedPhone}`, code, { EX: OTP_CODE_TTL_SECONDS });
+  await client.set(resendKey, '1', { EX: OTP_RESEND_TTL_SECONDS });
+  await client.del(`otp:attempt:${normalizedPhone}`);
+
+  const smsResult = await sendLoginCodeSmsSafe(normalizedPhone, code);
+
+  // 正式环境必须真实发送成功；失败则回滚重发锁，允许立即重试。
+  if (process.env.NODE_ENV === 'production' && !bypass.enabled && !smsResult.sent) {
+    await client.del(resendKey);
+    await client.del(`otp:code:${normalizedPhone}`);
+    throw new Error(smsResult.message || '验证码短信发送失败，请稍后再试');
+  }
+
+  let message;
+  if (smsResult.sent) {
+    message = '验证码已发送，请注意查收';
+  } else if (bypass.enabled) {
+    message = `当前为测试/开发环境，可直接使用万能验证码 ${bypass.code} 登录`;
+  } else {
+    message = smsResult.message || '验证码已生成';
+  }
+
+  return {
+    sent: Boolean(smsResult.sent),
+    resendAfter: OTP_RESEND_TTL_SECONDS,
+    devBypass: bypass.enabled,
+    message
+  };
+}
+
+/**
+ * 校验登录验证码。开发/测试万能码优先；否则走 Redis：
+ * 失败累计达上限锁定 10 分钟，成功后立即清除验证码与失败计数。
+ * 校验通过返回 true，否则抛出带提示的错误。
+ */
+export async function verifyLoginOtp(phone, code) {
+  await initializeDatabase();
+  const normalizedPhone = normalizePhone(phone);
+  const input = String(code ?? '').trim();
+  if (!isMainlandMobile(normalizedPhone)) {
+    throw new Error('请输入有效的 11 位手机号');
+  }
+  if (!input) {
+    throw new Error('请输入验证码');
+  }
+
+  const bypass = getOtpDevBypass();
+  if (bypass.enabled && input === bypass.code) {
+    return true;
+  }
+
+  const client = await ensureRedis();
+  const attemptKey = `otp:attempt:${normalizedPhone}`;
+  const codeKey = `otp:code:${normalizedPhone}`;
+
+  const attempts = Number((await client.get(attemptKey)) || 0);
+  if (attempts >= OTP_MAX_ATTEMPTS) {
+    throw new Error('验证码错误次数过多，请 10 分钟后再试');
+  }
+
+  const stored = await client.get(codeKey);
+  if (!stored) {
+    throw new Error('验证码已失效，请重新获取');
+  }
+
+  if (stored !== input) {
+    const next = await client.incr(attemptKey);
+    if (next === 1) {
+      await client.expire(attemptKey, OTP_LOCK_TTL_SECONDS);
+    }
+    const remaining = Math.max(0, OTP_MAX_ATTEMPTS - next);
+    throw new Error(
+      remaining > 0 ? `验证码不正确，还可尝试 ${remaining} 次` : '验证码错误次数过多，请 10 分钟后再试'
+    );
+  }
+
+  await client.del(codeKey);
+  await client.del(attemptKey);
+  return true;
 }
 
 export function getDatabaseFilePath() {

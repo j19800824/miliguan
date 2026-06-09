@@ -198,10 +198,7 @@ export default function AppSidebar({
                 <DropdownMenuSeparator />
 
                 <DropdownMenuGroup>
-                  <DropdownMenuItem onClick={() => setPasswordDialogOpen(true)}>
-                    <Icons.lock className='mr-2 h-4 w-4' />
-                    修改密码
-                  </DropdownMenuItem>
+                  {/* 已改为短信验证码登录，密码功能弃用，移除「修改密码」入口 */}
                   <DropdownMenuItem onClick={() => router.push('/dashboard/notifications')}>
                     <Icons.notification className='mr-2 h-4 w-4' />
                     通知中心

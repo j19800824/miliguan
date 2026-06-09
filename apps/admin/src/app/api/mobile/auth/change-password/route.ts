@@ -1,23 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getMobileSession } from '@/lib/auth/mobile';
-import { changeMobilePassword } from '@/lib/database.js';
 
-interface ChangeBody {
-  current?: string;
-  next?: string;
-}
+// 系统已改为手机号 + 短信验证码登录，密码功能整体弃用，统一返回 410 Gone。
+const GONE_MESSAGE = '密码功能已弃用，请使用手机号 + 短信验证码登录';
 
-export async function POST(req: Request) {
-  const user = await getMobileSession(req);
-  if (!user) return NextResponse.json({ message: '未登录' }, { status: 401 });
-  try {
-    const body = (await req.json()) as ChangeBody;
-    await changeMobilePassword(user.id, body.current ?? '', body.next ?? '');
-    return NextResponse.json({ ok: true });
-  } catch (e) {
-    return NextResponse.json(
-      { message: e instanceof Error ? e.message : '修改失败' },
-      { status: 400 },
-    );
-  }
+export async function POST() {
+  return NextResponse.json({ message: GONE_MESSAGE }, { status: 410 });
 }

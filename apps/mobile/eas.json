@@ -1,0 +1,34 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_USE_MOCKS": "0"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "http://8.163.69.121:3000",
+        "EXPO_PUBLIC_USE_MOCKS": "0"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_BASE_URL": "https://miliguan.bielingshipin.com",
+        "EXPO_PUBLIC_USE_MOCKS": "0"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

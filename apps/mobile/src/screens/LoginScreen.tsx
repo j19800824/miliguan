@@ -15,7 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Crown, Building, Store, User } from '../components/Icons';
 import { fetchUsers, type User as ApiUser } from '../services/api';
 import { shouldUseMocks } from '../services/api/client';
-import { login as apiLogin, type AuthUser } from '../services/auth/auth';
+import { login as apiLogin, sendLoginCode, type AuthUser } from '../services/auth/auth';
 import type { Role } from '../data/mock';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../constants/theme';
 
@@ -46,11 +46,16 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const [users, setUsers] = useState<ApiUser[]>([]);
 
-  // ----- Real-mode credentials state -----
-  const [account, setAccount] = useState('');
-  const [password, setPassword] = useState('');
+  // ----- Real-mode OTP state -----
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [noticeMsg, setNoticeMsg] = useState<string | null>(null);
+
+  const phoneValid = /^1\d{10}$/.test(phone.trim());
 
   useEffect(() => {
     if (!useMocks) return;
@@ -63,20 +68,45 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
     };
   }, [useMocks]);
 
+  useEffect(() => {
+    if (countdown <= 0) return;
+    const timer = setTimeout(() => setCountdown((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown]);
+
   const handleMockLogin = () => {
     const user = users.find((u) => u.id === selected);
     if (user) onLogin(user as AuthUser);
   };
 
+  const handleSendCode = async () => {
+    setErrorMsg(null);
+    setNoticeMsg(null);
+    if (!phoneValid) {
+      setErrorMsg('请输入有效的 11 位手机号');
+      return;
+    }
+    setSending(true);
+    try {
+      const result = await sendLoginCode(phone.trim());
+      setCountdown(result.resendAfter);
+      setNoticeMsg(result.message);
+    } catch (err) {
+      setErrorMsg(err instanceof Error ? err.message : '验证码发送失败');
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleCredentialLogin = async () => {
-    if (!account.trim() || !password) {
-      setErrorMsg('请填写账号和密码');
+    if (!phoneValid || code.trim().length < 4) {
+      setErrorMsg('请填写手机号和验证码');
       return;
     }
     setErrorMsg(null);
     setSubmitting(true);
     try {
-      const user = await apiLogin(account.trim(), password);
+      const user = await apiLogin(phone.trim(), code.trim());
       onLogin(user);
     } catch (err) {
       const message = err instanceof Error ? err.message : '登录失败';
@@ -107,7 +137,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
           </View>
           <Text style={styles.welcome}>欢迎登录</Text>
           <Text style={styles.subtitle}>
-            {useMocks ? '选择您的身份快速进入系统（演示模式）' : '请输入您的工作账号'}
+            {useMocks ? '选择您的身份快速进入系统（演示模式）' : '请输入手机号获取短信验证码登录'}
           </Text>
         </View>
 
@@ -173,32 +203,56 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             keyboardShouldPersistTaps="handled"
           >
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>账号</Text>
+              <Text style={styles.fieldLabel}>手机号</Text>
               <TextInput
-                testID="login-account"
+                testID="login-phone"
                 style={styles.input}
-                placeholder="请输入账号"
+                placeholder="请输入 11 位手机号"
                 placeholderTextColor={Colors.textMuted}
+                keyboardType="number-pad"
                 autoCapitalize="none"
                 autoCorrect={false}
-                value={account}
-                onChangeText={setAccount}
+                maxLength={11}
+                value={phone}
+                onChangeText={(text) => setPhone(text.replace(/\D/g, ''))}
                 editable={!submitting}
               />
             </View>
             <View style={styles.field}>
-              <Text style={styles.fieldLabel}>密码</Text>
-              <TextInput
-                testID="login-password"
-                style={styles.input}
-                placeholder="请输入密码"
-                placeholderTextColor={Colors.textMuted}
-                secureTextEntry
-                value={password}
-                onChangeText={setPassword}
-                editable={!submitting}
-              />
+              <Text style={styles.fieldLabel}>验证码</Text>
+              <View style={styles.codeRow}>
+                <TextInput
+                  testID="login-code"
+                  style={[styles.input, styles.codeInput]}
+                  placeholder="请输入验证码"
+                  placeholderTextColor={Colors.textMuted}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  value={code}
+                  onChangeText={(text) => setCode(text.replace(/\D/g, ''))}
+                  editable={!submitting}
+                />
+                <TouchableOpacity
+                  testID="login-send-code"
+                  style={[
+                    styles.sendCodeBtn,
+                    (!phoneValid || sending || countdown > 0) && styles.sendCodeBtnDisabled,
+                  ]}
+                  onPress={handleSendCode}
+                  disabled={!phoneValid || sending || countdown > 0}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.sendCodeText}>
+                    {countdown > 0 ? `${countdown}s` : sending ? '发送中' : '获取验证码'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
+            {noticeMsg && (
+              <Text testID="login-notice" style={styles.noticeText}>
+                {noticeMsg}
+              </Text>
+            )}
             {errorMsg && (
               <Text testID="login-error" style={styles.errorText}>
                 {errorMsg}
@@ -224,10 +278,10 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
               testID="login-submit"
               style={[
                 styles.loginBtn,
-                (submitting || !account.trim() || !password) && styles.loginBtnDisabled,
+                (submitting || !phoneValid || code.trim().length < 4) && styles.loginBtnDisabled,
               ]}
               onPress={handleCredentialLogin}
-              disabled={submitting || !account.trim() || !password}
+              disabled={submitting || !phoneValid || code.trim().length < 4}
               activeOpacity={0.8}
             >
               {submitting ? (
@@ -238,7 +292,7 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
             </TouchableOpacity>
           )}
           <Text style={styles.hint}>
-            {useMocks ? '演示模式 · 选择角色直接登录' : '使用工作账号登录米粒冠系统'}
+            {useMocks ? '演示模式 · 选择角色直接登录' : '使用手机号 + 短信验证码登录米粒冠系统'}
           </Text>
         </View>
       </View>
@@ -322,6 +376,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     fontSize: FontSize.md,
     color: Colors.textPrimary,
+  },
+  codeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  codeInput: {
+    flex: 1,
+  },
+  sendCodeBtn: {
+    height: 48,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 96,
+  },
+  sendCodeBtnDisabled: {
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+  },
+  sendCodeText: {
+    fontSize: FontSize.sm,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  noticeText: {
+    fontSize: FontSize.sm,
+    color: Colors.textSecondary,
+    textAlign: 'center',
   },
   errorText: {
     fontSize: FontSize.sm,
