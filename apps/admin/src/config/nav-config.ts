@@ -206,6 +206,14 @@ export const headquartersNavGroups: NavGroup[] = [
             access: { permission: 'delete:approve' }
           }
         ]
+      },
+      {
+        title: '应用发布',
+        url: '/dashboard/app-releases',
+        icon: 'upload',
+        isActive: false,
+        access: { permission: 'app-releases:view' },
+        items: []
       }
     ]
   }

@@ -1298,7 +1298,9 @@ async function seedPermissions() {
     ['数据报表', '查看数据报表', 'reports:view', '页面', '启用'],
     ['协同看板', '查看协同看板', 'kanban:view', '页面', '启用'],
     ['通知中心', '查看通知中心', 'notifications:view', '页面', '启用'],
-    ['系统设置', '查看系统设置', 'settings:view', '页面', '启用']
+    ['系统设置', '查看系统设置', 'settings:view', '页面', '启用'],
+    ['应用发布', '查看应用版本', 'app-releases:view', '页面', '启用'],
+    ['应用发布', '上传应用版本', 'app-releases:edit', '按钮', '启用']
   ];
 
   for (const permission of permissions) {
@@ -10431,4 +10433,108 @@ export async function listStoresWithSqbTerminal({ search = '' } = {}) {
     sqbDeviceId: r.sqb_device_id ?? '',
     activated: Boolean(r.sqb_terminal_sn)
   }));
+}
+
+// ===== 应用发布（APK 下载分发）=====
+let appReleasesReady;
+async function ensureAppReleasesTable() {
+  if (appReleasesReady) return appReleasesReady;
+  appReleasesReady = query(`
+    CREATE TABLE IF NOT EXISTS app_releases (
+      id SERIAL PRIMARY KEY,
+      platform TEXT NOT NULL DEFAULT 'android',
+      version TEXT NOT NULL,
+      version_code INTEGER NOT NULL DEFAULT 0,
+      file_key TEXT NOT NULL,
+      file_name TEXT NOT NULL DEFAULT '',
+      file_size BIGINT NOT NULL DEFAULT 0,
+      notes TEXT NOT NULL DEFAULT '',
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_by TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL
+    );
+  `);
+  await appReleasesReady;
+  return appReleasesReady;
+}
+
+function mapAppRelease(r) {
+  return {
+    id: String(r.id),
+    platform: r.platform,
+    version: r.version,
+    versionCode: Number(r.version_code ?? 0),
+    fileKey: r.file_key,
+    fileName: r.file_name ?? '',
+    fileSize: Number(r.file_size ?? 0),
+    notes: r.notes ?? '',
+    isActive: Boolean(r.is_active),
+    createdBy: r.created_by ?? '',
+    createdAt: r.created_at
+  };
+}
+
+export async function listAppReleases(platform = 'android') {
+  await ensureAppReleasesTable();
+  const rows = (
+    await query(`SELECT * FROM app_releases WHERE platform = $1 ORDER BY id DESC`, [platform])
+  ).rows;
+  return rows.map(mapAppRelease);
+}
+
+export async function createAppRelease(input) {
+  await ensureAppReleasesTable();
+  const platform = input.platform || 'android';
+  // 同平台旧版本全部置为非当前
+  await query(`UPDATE app_releases SET is_active = FALSE WHERE platform = $1`, [platform]);
+  const row = (
+    await query(
+      `
+        INSERT INTO app_releases
+          (platform, version, version_code, file_key, file_name, file_size, notes, is_active, created_by, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,TRUE,$8,$9)
+        RETURNING *
+      `,
+      [
+        platform,
+        String(input.version ?? '').trim(),
+        Number(input.versionCode ?? 0),
+        String(input.fileKey ?? '').trim(),
+        String(input.fileName ?? '').trim(),
+        Number(input.fileSize ?? 0),
+        String(input.notes ?? ''),
+        String(input.createdBy ?? ''),
+        now()
+      ]
+    )
+  ).rows[0];
+  return mapAppRelease(row);
+}
+
+export async function getLatestAppRelease(platform = 'android') {
+  await ensureAppReleasesTable();
+  const row = (
+    await query(
+      `SELECT * FROM app_releases WHERE platform = $1 AND is_active = TRUE ORDER BY id DESC LIMIT 1`,
+      [platform]
+    )
+  ).rows[0];
+  return row ? mapAppRelease(row) : null;
+}
+
+export async function setAppReleaseActive(id) {
+  await ensureAppReleasesTable();
+  const target = (await query(`SELECT * FROM app_releases WHERE id = $1`, [Number(id)])).rows[0];
+  if (!target) return null;
+  await query(`UPDATE app_releases SET is_active = FALSE WHERE platform = $1`, [target.platform]);
+  const row = (
+    await query(`UPDATE app_releases SET is_active = TRUE WHERE id = $1 RETURNING *`, [Number(id)])
+  ).rows[0];
+  return mapAppRelease(row);
+}
+
+export async function deleteAppRelease(id) {
+  await ensureAppReleasesTable();
+  await query(`DELETE FROM app_releases WHERE id = $1`, [Number(id)]);
+  return { ok: true };
 }
