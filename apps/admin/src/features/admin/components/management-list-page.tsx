@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { readApiError, type FieldErrors } from '@/lib/form-errors';
 import type { ManagementConfig, MetricCard } from '../data/management-data';
 import { PaginationFooter } from './pagination-footer';
+import { PurchaseOrderApproveActions } from './purchase-order-approve-actions';
 import { StatusBadge } from './status-badge';
 
 type DataRow = Record<string, string | number | null | undefined> & { id: string };
@@ -98,6 +99,7 @@ export function ManagementListPage({
   metrics,
   canWrite = true,
   canGrant = false,
+  canApprovePurchaseOrders = false,
   currentUserId,
   extraPageHeaderAction,
   listDescription = '当前数据直接来自 PostgreSQL 数据库，可新增、编辑和删除。',
@@ -113,6 +115,7 @@ export function ManagementListPage({
   metrics: MetricCard[];
   canWrite?: boolean;
   canGrant?: boolean;
+  canApprovePurchaseOrders?: boolean;
   currentUserId?: string;
   extraPageHeaderAction?: React.ReactNode;
   listDescription?: string;
@@ -477,6 +480,17 @@ export function ManagementListPage({
                               >
                                 详情
                               </Button>
+                            ) : null}
+                            {config.entity === 'purchase-orders' && row.approval_status === '待审核' ? (
+                              canApprovePurchaseOrders ? (
+                                <PurchaseOrderApproveActions orderId={String(row.id)} compact />
+                              ) : (
+                                <DisabledActionButton
+                                  label='审核'
+                                  reason='当前账号缺少 purchase-orders:approve 权限，不能审核订货单。'
+                                  variant='secondary'
+                                />
+                              )
                             ) : null}
                             {config.entity === 'roles' && canGrant ? (
                               <Button

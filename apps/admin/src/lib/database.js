@@ -252,6 +252,62 @@ async function changeStoreOrderQuota(storeId, delta, reason, createdBy = '系统
   });
 }
 
+async function upsertStoreInventory(companyId, storeId, skuId, delta, sourceType, sourceId, remark) {
+  await ensureStoreInventoryTables();
+  const existing = (
+    await query(
+      `
+        SELECT id, quantity, safety_stock
+        FROM store_inventory
+        WHERE store_id = $1 AND sku_id = $2
+      `,
+      [Number(storeId), Number(skuId)]
+    )
+  ).rows[0];
+
+  const currentQuantity = existing ? toNumber(existing.quantity) : 0;
+  const nextQuantity = currentQuantity + Number(delta);
+  if (nextQuantity < 0) {
+    throw new Error('门店库存不足，无法完成当前操作');
+  }
+
+  const ts = now();
+  if (existing) {
+    await query(
+      `UPDATE store_inventory SET quantity = $1, updated_at = $2 WHERE id = $3`,
+      [nextQuantity, ts, existing.id]
+    );
+  } else {
+    await query(
+      `
+        INSERT INTO store_inventory (company_id, store_id, sku_id, quantity, safety_stock, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, 0, $5, $5)
+      `,
+      [Number(companyId), Number(storeId), Number(skuId), nextQuantity, ts]
+    );
+  }
+
+  await query(
+    `
+      INSERT INTO inventory_logs
+        (company_id, sku_id, source_type, source_id, change_type, quantity, balance_after, remark, created_at, store_id)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    `,
+    [
+      Number(companyId),
+      Number(skuId),
+      sourceType,
+      String(sourceId),
+      delta >= 0 ? '调入' : '调出',
+      Math.abs(Number(delta)),
+      nextQuantity,
+      remark ?? '',
+      ts,
+      Number(storeId)
+    ]
+  );
+}
+
 async function applyFirstStoreReceiptCompanyRebate({
   companyId,
   storeId,
@@ -6561,9 +6617,20 @@ export async function approvePurchaseOrder(id, payload = {}, actorName = '后台
 
   if (!order.order_quota_deducted) {
     if (order.store_id) {
-      throw new Error('管理后台不再处理门店订货单审核，请在 App 流程处理');
+      await changeStoreOrderQuota(
+        order.store_id,
+        -toNumber(order.order_quota_total),
+        '门店订货单审核通过扣减订货额',
+        actorName
+      );
+    } else {
+      await changeCompanyOrderQuota(
+        order.company_id,
+        -toNumber(order.order_quota_total),
+        '订货单审核通过扣减订货额',
+        actorName
+      );
     }
-    await changeCompanyOrderQuota(order.company_id, -toNumber(order.order_quota_total), '订货单审核通过扣减订货额', actorName);
   }
 
   let finalStatus = payload.final_status ?? '已入库';
@@ -6571,15 +6638,7 @@ export async function approvePurchaseOrder(id, payload = {}, actorName = '后台
     finalStatus = '已入库';
   }
 
-  await query(
-    `
-      UPDATE purchase_orders
-      SET status = $1, approval_status = '已通过', abnormal_flag = FALSE, order_quota_deducted = TRUE, updated_by = $2, updated_at = $3
-      WHERE id = $4
-    `,
-    [finalStatus, actorName, now(), Number(id)]
-  );
-
+  let shouldMarkStockReceived = false;
   if (finalStatus === '已入库' && !order.stock_received) {
     const items = (
       await query(
@@ -6593,14 +6652,55 @@ export async function approvePurchaseOrder(id, payload = {}, actorName = '后台
       )
     ).rows;
     for (const item of items) {
-      await upsertInventory(order.company_id, item.sku_id, item.quantity, '订货入库', id, '审核通过后入库');
+      if (order.store_id) {
+        await upsertInventory(
+          order.company_id,
+          item.sku_id,
+          -toNumber(item.quantity),
+          '门店订货出库',
+          id,
+          '门店订货调拨给门店'
+        );
+        await upsertStoreInventory(
+          order.company_id,
+          order.store_id,
+          item.sku_id,
+          toNumber(item.quantity),
+          '门店订货入库',
+          id,
+          '门店确认收货入库'
+        );
+      } else {
+        await upsertInventory(order.company_id, item.sku_id, item.quantity, '订货入库', id, '审核通过后入库');
+      }
     }
-    await query('UPDATE purchase_orders SET stock_received = TRUE, updated_by = $1, updated_at = $2 WHERE id = $3', [
-      actorName,
-      now(),
-      Number(id)
-    ]);
+    if (order.store_id) {
+      await applyFirstStoreReceiptCompanyRebate({
+        companyId: order.company_id,
+        storeId: order.store_id,
+        orderQuotaTotal: order.order_quota_total,
+        sourcePurchaseOrderId: id,
+        createdBy: actorName
+      });
+    }
+    shouldMarkStockReceived = true;
   }
+
+  await query(
+    `
+      UPDATE purchase_orders
+      SET
+        status = $1,
+        approval_status = '已通过',
+        abnormal_flag = FALSE,
+        order_quota_deducted = TRUE,
+        stock_received = CASE WHEN $5 THEN TRUE ELSE stock_received END,
+        updated_by = $2,
+        updated_at = $3
+      WHERE id = $4
+    `,
+    [finalStatus, actorName, now(), Number(id), shouldMarkStockReceived]
+  );
 
   await appendApprovalLog({
     entityType: 'purchase_order',

@@ -7,10 +7,12 @@ import { Button } from '@/components/ui/button';
 
 export function PurchaseOrderApproveActions({
   orderId,
-  disabled = false
+  disabled = false,
+  compact = false
 }: {
   orderId: string;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState<'approve' | 'reject' | null>(null);
@@ -42,15 +44,16 @@ export function PurchaseOrderApproveActions({
 
   return (
     <div className='flex gap-2'>
-      <Button disabled={disabled || loading !== null} onClick={() => submit('通过')}>
-        {loading === 'approve' ? '审核中...' : '审核通过'}
+      <Button size={compact ? 'sm' : 'default'} disabled={disabled || loading !== null} onClick={() => submit('通过')}>
+        {loading === 'approve' ? '审核中...' : compact ? '通过' : '审核通过'}
       </Button>
       <Button
         variant='destructive'
+        size={compact ? 'sm' : 'default'}
         disabled={disabled || loading !== null}
         onClick={() => submit('驳回')}
       >
-        {loading === 'reject' ? '处理中...' : '驳回'}
+        {loading === 'reject' ? '处理中...' : compact ? '驳回' : '驳回'}
       </Button>
     </div>
   );

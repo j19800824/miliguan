@@ -45,6 +45,7 @@ export default async function PurchaseOrdersPage({
       initialFilter={status}
       metrics={metrics}
       canWrite={hasPermission(user, config.writePermission)}
+      canApprovePurchaseOrders={hasPermission(user, 'purchase-orders:approve')}
     />
   );
 }
