@@ -44,6 +44,7 @@ export function SalesStaffHomeScreen({ user }: SalesStaffHomeScreenProps) {
     storeVerifyCount: 0,
     myVerifyCount: 0,
     todayPoints: 0,
+    totalPoints: 0,
   });
 
   useEffect(() => {
@@ -117,7 +118,7 @@ export function SalesStaffHomeScreen({ user }: SalesStaffHomeScreenProps) {
             </View>
             <Text style={styles.pointsLabel}>我的积分</Text>
             <Text style={styles.pointsValue}>
-              {(user.points ?? 0).toLocaleString()}
+              {(stats.totalPoints ?? user.points ?? 0).toLocaleString()}
             </Text>
             <Text style={styles.pointsSubText}>点击查看变动记录</Text>
           </LinearGradient>

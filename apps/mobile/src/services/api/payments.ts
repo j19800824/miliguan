@@ -37,11 +37,17 @@ export interface RefundResult {
   writeoffReverted: boolean;
 }
 
+export interface CreatePaymentItem {
+  skuId: string | number;
+  quantity: number;
+}
+
 export interface CreatePaymentInput {
-  sourceType?: 'writeoff' | 'topup' | 'standalone';
+  sourceType?: 'writeoff' | 'topup' | 'standalone' | 'cart';
   sourceId?: string | number;
   amount?: number;
   subject?: string;
+  items?: CreatePaymentItem[];
 }
 
 export async function createPayment(

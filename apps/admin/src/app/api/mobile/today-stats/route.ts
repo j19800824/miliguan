@@ -10,6 +10,7 @@ export async function GET(req: Request) {
       storeVerifyCount: 0,
       myVerifyCount: 0,
       todayPoints: 0,
+      totalPoints: 0,
     });
   }
   try {

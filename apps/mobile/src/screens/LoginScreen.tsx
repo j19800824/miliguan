@@ -92,7 +92,8 @@ export function LoginScreen({ onLogin }: LoginScreenProps) {
       setCountdown(result.resendAfter);
       setNoticeMsg(result.message);
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : '验证码发送失败');
+      const message = err instanceof Error ? err.message : '验证码发送失败';
+      setErrorMsg(message);
     } finally {
       setSending(false);
     }

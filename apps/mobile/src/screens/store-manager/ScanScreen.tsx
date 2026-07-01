@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -9,12 +9,23 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme';
 import { postVerifyScan, type VerifyScanResult } from '../../services/api';
 
 type ScanState = 'scanning' | 'success' | 'fail';
+
+interface CartItem {
+  skuId: string;
+  name: string;
+  sku: string;
+  spec?: string;
+  price: number;
+  points: number;
+  quantity: number;
+  availableQuantity: number;
+}
 
 const SUPPORTED_BARCODES = [
   'qr',
@@ -31,6 +42,7 @@ const SHOW_SCAN_DEMO_TRIGGERS = __DEV__;
 export function ScanScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const [permission, requestPermission] = useCameraPermissions();
   const [state, setState] = useState<ScanState>('scanning');
@@ -38,6 +50,7 @@ export function ScanScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [manualOpen, setManualOpen] = useState(false);
   const [manualCode, setManualCode] = useState('');
+  const [cart, setCart] = useState<CartItem[]>([]);
   // Throttle: avoid spamming the API while a barcode lingers in frame.
   const inFlightRef = useRef(false);
 
@@ -55,6 +68,36 @@ export function ScanScreen() {
     setSubmitting(true);
     try {
       const res = await postVerifyScan({ barcode });
+      if (res.success && res.product?.skuId) {
+        const product = res.product;
+        setCart((prev) => {
+          const existing = prev.find((item) => item.skuId === product.skuId);
+          const availableQuantity = product.availableQuantity ?? 1;
+          if (existing) {
+            return prev.map((item) =>
+              item.skuId === product.skuId
+                ? {
+                    ...item,
+                    quantity: Math.min(item.quantity + 1, item.availableQuantity),
+                  }
+                : item,
+            );
+          }
+          return [
+            ...prev,
+            {
+              skuId: product.skuId ?? '',
+              name: product.name,
+              sku: product.sku,
+              spec: product.spec,
+              price: product.price ?? product.points ?? 0,
+              points: product.points ?? 0,
+              quantity: 1,
+              availableQuantity,
+            },
+          ];
+        });
+      }
       setResult(res);
       setState(res.success ? 'success' : 'fail');
     } catch (err) {
@@ -79,6 +122,30 @@ export function ScanScreen() {
     setResult(null);
     setState('scanning');
     inFlightRef.current = false;
+  };
+
+  useFocusEffect(
+    useCallback(() => {
+      setResult(null);
+      setState('scanning');
+      setSubmitting(false);
+      inFlightRef.current = false;
+      return undefined;
+    }, []),
+  );
+
+  const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const cartPoints = cart.reduce((sum, item) => sum + item.points * item.quantity, 0);
+
+  const handlePayCart = () => {
+    if (cart.length === 0) return;
+    nav.navigate('Payment', {
+      cartItems: cart.map((item) => ({ skuId: item.skuId, quantity: item.quantity })),
+      amount: cartTotal,
+      productName: cart.length === 1 ? cart[0].name : `${cart.length} 个商品`,
+    });
+    setCart([]);
+    handleReset();
   };
 
   // Permission states
@@ -183,14 +250,16 @@ export function ScanScreen() {
 
       <View style={styles.viewfinder}>
         {/* Real camera */}
-        <CameraView
-          style={StyleSheet.absoluteFill}
-          facing="back"
-          onBarcodeScanned={state === 'scanning' ? handleBarcodeScanned : undefined}
-          barcodeScannerSettings={{
-            barcodeTypes: [...SUPPORTED_BARCODES],
-          }}
-        />
+        {isFocused && (
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            onBarcodeScanned={state === 'scanning' ? handleBarcodeScanned : undefined}
+            barcodeScannerSettings={{
+              barcodeTypes: [...SUPPORTED_BARCODES],
+            }}
+          />
+        )}
         {/* Corner frame overlay */}
         <View pointerEvents="none" style={styles.cornerWrap}>
           <View style={[styles.corner, styles.cornerTL]} />
@@ -202,41 +271,67 @@ export function ScanScreen() {
         {submitting && (
           <View style={styles.submittingPill}>
             <ActivityIndicator color="#fff" size="small" />
-            <Text style={styles.submittingText}>核销中…</Text>
+            <Text style={styles.submittingText}>识别中…</Text>
           </View>
         )}
       </View>
 
+      {cart.length > 0 && (
+        <View style={styles.cartCard}>
+          <View style={styles.cartHeader}>
+            <Text style={styles.cartTitle}>待付款商品</Text>
+            <Text style={styles.cartSummary}>
+              {cart.length} 个 SKU · ¥{cartTotal.toFixed(2)} · 回调 {cartPoints}
+            </Text>
+          </View>
+          {cart.map((item) => (
+            <View key={item.skuId} style={styles.cartItem}>
+              <View style={styles.cartItemInfo}>
+                <Text style={styles.cartItemName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.cartItemMeta} numberOfLines={1}>
+                  {item.sku}{item.spec ? ` / ${item.spec}` : ''}
+                </Text>
+              </View>
+              <Text style={styles.cartQty}>×{item.quantity}</Text>
+            </View>
+          ))}
+          <TouchableOpacity
+            testID="scan-pay-cart"
+            style={styles.cartPayBtn}
+            onPress={handlePayCart}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.payBtnText}>合并付款核销</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {state === 'success' && (
         <View style={styles.resultCard}>
-          <View style={[styles.resultIcon, styles.resultSuccess]}>
-            <Text style={styles.resultIconText}>✓</Text>
-          </View>
-          <View style={styles.resultInfo}>
-            <Text style={styles.resultTitle}>核销成功</Text>
-            <Text style={styles.resultProduct}>
-              {result?.product?.name ?? '—'}
-            </Text>
-            <View style={styles.resultMeta}>
-              <Text style={styles.resultMetaItem}>
-                SKU: {result?.product?.sku ?? '—'}
+          <View style={styles.resultHeader}>
+            <View style={[styles.resultIcon, styles.resultSuccess]}>
+              <Text style={styles.resultIconText}>✓</Text>
+            </View>
+            <View style={styles.resultInfo}>
+              <Text style={styles.resultTitle}>已加入购物车</Text>
+              <Text style={styles.resultProduct} numberOfLines={2}>
+                {result?.product?.name ?? '—'}
               </Text>
-              <Text style={styles.resultMetaItem}>
-                回调积分: +{result?.product?.points ?? 0}
-              </Text>
+              <View style={styles.resultMeta}>
+                <Text style={styles.resultMetaItem} numberOfLines={1}>
+                  SKU: {result?.product?.sku ?? '—'}
+                </Text>
+                <Text style={styles.resultMetaItem}>
+                  回调积分: +{result?.product?.points ?? 0}
+                </Text>
+              </View>
             </View>
           </View>
           <View style={styles.successActions}>
             <TouchableOpacity
               testID="scan-pay-now"
               style={styles.payBtn}
-              onPress={() => {
-                nav.navigate('Payment', {
-                  writeoffId: result?.writeoffId,
-                  productName: result?.product?.name,
-                });
-                handleReset();
-              }}
+              onPress={handlePayCart}
               activeOpacity={0.85}
             >
               <Text style={styles.payBtnText}>去付款</Text>
@@ -255,19 +350,21 @@ export function ScanScreen() {
 
       {state === 'fail' && (
         <View style={[styles.resultCard, styles.resultCardFail]}>
-          <View style={[styles.resultIcon, styles.resultFail]}>
-            <Text style={styles.resultIconText}>✗</Text>
-          </View>
-          <View style={styles.resultInfo}>
-            <Text style={[styles.resultTitle, { color: Colors.danger }]}>
-              核销失败
-            </Text>
-            <Text style={styles.resultProduct}>
-              {result?.message ?? '未识别商品或已核销'}
-            </Text>
+          <View style={styles.resultHeader}>
+            <View style={[styles.resultIcon, styles.resultFail]}>
+              <Text style={styles.resultIconText}>✗</Text>
+            </View>
+            <View style={styles.resultInfo}>
+              <Text style={[styles.resultTitle, { color: Colors.danger }]}>
+                核销失败
+              </Text>
+              <Text style={styles.resultProduct}>
+                {result?.message ?? '未识别商品或已核销'}
+              </Text>
+            </View>
           </View>
           <TouchableOpacity
-            style={[styles.continueBtn, { backgroundColor: Colors.danger }]}
+            style={[styles.continueBtn, styles.failRetryBtn]}
             onPress={handleReset}
             activeOpacity={0.8}
           >
@@ -470,19 +567,65 @@ const styles = StyleSheet.create({
   },
   submittingText: { color: '#fff', fontSize: FontSize.sm },
 
+  cartCard: {
+    backgroundColor: Colors.surface,
+    marginHorizontal: Spacing.lg,
+    marginTop: Spacing.md,
+    borderRadius: Radius.xl,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    ...Shadow.card,
+  },
+  cartHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+  },
+  cartTitle: { fontSize: FontSize.md, fontWeight: '800', color: Colors.textPrimary },
+  cartSummary: { flex: 1, textAlign: 'right', fontSize: FontSize.xs, color: Colors.textSecondary },
+  cartItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+  },
+  cartItemInfo: { flex: 1, minWidth: 0 },
+  cartItemName: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textPrimary },
+  cartItemMeta: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  cartQty: { fontSize: FontSize.md, fontWeight: '800', color: Colors.primary },
+  cartPayBtn: {
+    backgroundColor: Colors.gold,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
+
   resultCard: {
     backgroundColor: Colors.surface,
     margin: Spacing.lg,
     borderRadius: Radius.xl,
     padding: Spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: Spacing.md,
     borderWidth: 1.5,
     borderColor: Colors.success,
     ...Shadow.strong,
   },
   resultCardFail: { borderColor: Colors.danger },
+  resultHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    minWidth: 0,
+  },
   resultIcon: {
     width: 48,
     height: 48,
@@ -493,13 +636,14 @@ const styles = StyleSheet.create({
   resultSuccess: { backgroundColor: Colors.success },
   resultFail: { backgroundColor: Colors.danger },
   resultIconText: { color: '#fff', fontSize: 22, fontWeight: '800' },
-  resultInfo: { flex: 1 },
+  resultInfo: { flex: 1, minWidth: 0 },
   resultTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.success },
   resultProduct: {
     fontSize: FontSize.lg,
     fontWeight: '600',
     color: Colors.textPrimary,
     marginTop: 2,
+    lineHeight: 24,
   },
   resultMeta: {
     flexDirection: 'row',
@@ -507,22 +651,38 @@ const styles = StyleSheet.create({
     marginTop: 4,
     flexWrap: 'wrap',
   },
-  resultMetaItem: { fontSize: FontSize.xs, color: Colors.textSecondary },
+  resultMetaItem: {
+    fontSize: FontSize.xs,
+    color: Colors.textSecondary,
+    flexShrink: 1,
+    minWidth: 0,
+  },
   continueBtn: {
     backgroundColor: Colors.primary,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   continueBtnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '700' },
   successActions: { flexDirection: 'row', gap: Spacing.sm, alignItems: 'center' },
   payBtn: {
+    flex: 1,
     backgroundColor: Colors.gold,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
   },
   payBtnText: { color: '#fff', fontSize: FontSize.sm, fontWeight: '700' },
+  failRetryBtn: {
+    alignSelf: 'stretch',
+    backgroundColor: Colors.danger,
+  },
 
   demoRow: {
     flexDirection: 'row',

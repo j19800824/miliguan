@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getLatestAppRelease } from '@/lib/database.js';
-import { isOssEnabled } from '@/lib/oss';
+import { buildPublicOssUrl, isOssEnabled } from '@/lib/oss';
 
 // 公开接口：无需登录，返回最新可用版本 + 签名下载链接。
 export async function GET(request: Request) {
@@ -12,10 +12,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ release: null });
   }
 
-  // 经应用域名代理下载（绕开 OSS 默认域名的 APK 分发限制）
-  const downloadUrl = isOssEnabled()
+  // CDN/OSS 直链优先；未配置公开加速域名时退回应用域名代理。
+  const publicUrl = buildPublicOssUrl(release.fileKey);
+  const downloadUrl = publicUrl || (isOssEnabled()
     ? `/api/public/app-release/download?platform=${platform}`
-    : '';
+    : '');
 
   return NextResponse.json({
     release: {

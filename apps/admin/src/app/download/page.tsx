@@ -1,5 +1,5 @@
 import { getLatestAppRelease } from '@/lib/database.js';
-import { isOssEnabled } from '@/lib/oss';
+import { buildPublicOssUrl, isOssEnabled } from '@/lib/oss';
 
 export const metadata = {
   title: '米粒冠 App 下载'
@@ -14,8 +14,9 @@ function formatSize(bytes: number) {
 
 export default async function DownloadPage() {
   const release = await getLatestAppRelease('android');
-  // 经应用域名代理下载（绕开 OSS 默认域名的 APK 分发限制）
-  const downloadUrl = release && isOssEnabled() ? '/api/public/app-release/download?platform=android' : '';
+  // CDN/OSS 直链优先；未配置公开加速域名时退回应用域名代理。
+  const publicUrl = release ? buildPublicOssUrl(release.fileKey) : '';
+  const downloadUrl = release ? publicUrl || (isOssEnabled() ? '/api/public/app-release/download?platform=android' : '') : '';
 
   return (
     <div className='flex min-h-screen flex-col items-center justify-center gap-6 bg-slate-50 px-6 py-12'>

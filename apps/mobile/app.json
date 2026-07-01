@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "MiLiGuan Mobile",
+    "name": "米粒冠",
     "slug": "miliguan-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -30,7 +30,7 @@
         "android.permission.RECORD_AUDIO"
       ],
       "package": "com.miliguan.bielingshipin",
-      "versionCode": 2
+      "versionCode": 3
     },
     "web": {
       "favicon": "./assets/favicon.png"

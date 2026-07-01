@@ -24,6 +24,7 @@ import {
   createPayment,
   fetchPayment,
   mockPay,
+  type CreatePaymentItem,
   type CreatePaymentResponse,
   type PaymentDetail,
 } from '../../services/api/payments';
@@ -33,6 +34,7 @@ interface RouteParams {
   writeoffId?: string;
   productName?: string;
   amount?: number;
+  cartItems?: CreatePaymentItem[];
 }
 
 const POLL_INTERVAL_MS = 3_000;
@@ -78,8 +80,13 @@ export function PaymentScreen() {
     (async () => {
       try {
         const res = await createPayment({
-          sourceType: params.writeoffId ? 'writeoff' : 'standalone',
+          sourceType: params.cartItems?.length
+            ? 'cart'
+            : params.writeoffId
+              ? 'writeoff'
+              : 'standalone',
           sourceId: params.writeoffId,
+          items: params.cartItems,
           amount: params.amount,
           subject: params.productName ?? '米粒冠门店核销',
         });

@@ -2463,6 +2463,9 @@ export async function listCompanies({ search = '', status = 'all', page = 1, pag
         companies.status,
         companies.available_order_quota,
         companies.total_order_quota,
+        COALESCE(MAX(member_summary.total_sales), 0) AS total_sales,
+        COALESCE(MAX(member_summary.total_verify), 0)::int AS total_verify,
+        COALESCE(MAX(member_summary.total_points), 0) AS total_points,
         COUNT(DISTINCT company_stores.id)::int AS store_count,
         COALESCE(SUM(company_inventory.quantity), 0)::int AS inventory_quantity_total,
         COALESCE(SUM(company_inventory.quantity * product_skus.order_quota_price), 0) AS inventory_amount_total
@@ -2470,6 +2473,32 @@ export async function listCompanies({ search = '', status = 'all', page = 1, pag
       LEFT JOIN company_stores ON company_stores.company_id = companies.id
       LEFT JOIN company_inventory ON company_inventory.company_id = companies.id
       LEFT JOIN product_skus ON product_skus.id = company_inventory.sku_id
+      LEFT JOIN LATERAL (
+        SELECT
+          (
+            SELECT COALESCE(SUM(member_orders.total_amount), 0)
+            FROM member_orders
+            WHERE member_orders.company_id = companies.id
+              AND member_orders.delete_status = '正常'
+          ) AS total_sales,
+          (
+            SELECT COUNT(writeoff_records.id)::int
+            FROM writeoff_records
+            INNER JOIN member_orders ON member_orders.id = writeoff_records.member_order_id
+            WHERE member_orders.company_id = companies.id
+              AND member_orders.delete_status = '正常'
+              AND writeoff_records.status = '成功'
+          ) AS total_verify,
+          (
+            SELECT COALESCE(SUM(product_skus.redeem_points_price), 0)
+            FROM writeoff_records
+            INNER JOIN member_orders ON member_orders.id = writeoff_records.member_order_id
+            LEFT JOIN product_skus ON product_skus.id = writeoff_records.sku_id
+            WHERE member_orders.company_id = companies.id
+              AND member_orders.delete_status = '正常'
+              AND writeoff_records.status = '成功'
+          ) AS total_points
+      ) member_summary ON TRUE
       ${whereClause}
       GROUP BY companies.id
       ORDER BY companies.updated_at DESC, companies.id DESC
@@ -2487,6 +2516,9 @@ export async function listCompanies({ search = '', status = 'all', page = 1, pag
     status: row.status,
       available_order_quota: toNumber(row.available_order_quota),
       total_order_quota: toNumber(row.total_order_quota),
+      total_sales: toNumber(row.total_sales),
+      total_verify: toNumber(row.total_verify),
+      total_points: toNumber(row.total_points),
       inventory_quantity_total: toNumber(row.inventory_quantity_total),
       inventory_amount_total: toNumber(row.inventory_amount_total),
       store_count: toNumber(row.store_count)
@@ -2645,7 +2677,7 @@ export async function listMemberOrders({ search = '', status = 'all', page = 1, 
 }
 
 export async function listCompanyStoresByCompany(companyId, { page = 1, pageSize = 10, user = {} } = {}) {
-  await initializeDatabase();
+  await ensureStoreInventoryTables();
   assertCanAccessCompany(user, companyId);
   const nextPage = normalizePageValue(page);
   const offset = (nextPage - 1) * pageSize;
@@ -2674,10 +2706,17 @@ export async function listCompanyStoresByCompany(companyId, { page = 1, pageSize
           COALESCE(NULLIF(company_stores.manager_phone, ''), admin_staff.phone) AS manager_phone,
           company_stores.available_order_quota,
           company_stores.total_order_quota,
+          COALESCE(store_stock.inventory_quantity, 0) AS inventory_quantity,
+          COALESCE(store_stock.sku_count, 0) AS inventory_sku_count,
           company_stores.first_purchase_rebate_done,
           company_stores.status
         FROM company_stores
         LEFT JOIN admin_staff ON admin_staff.id = company_stores.manager_staff_id
+        LEFT JOIN (
+          SELECT store_id, SUM(quantity)::int AS inventory_quantity, COUNT(*)::int AS sku_count
+          FROM store_inventory
+          GROUP BY store_id
+        ) store_stock ON store_stock.store_id = company_stores.id
         WHERE company_stores.company_id = $1 AND company_stores.delete_status = '正常'
         ORDER BY company_stores.updated_at DESC, company_stores.id DESC
         LIMIT $2 OFFSET $3
@@ -2697,6 +2736,8 @@ export async function listCompanyStoresByCompany(companyId, { page = 1, pageSize
       manager_phone: row.manager_phone ?? '',
       available_order_quota: toNumber(row.available_order_quota),
       total_order_quota: toNumber(row.total_order_quota),
+      inventory_quantity: Number(row.inventory_quantity ?? 0),
+      inventory_sku_count: Number(row.inventory_sku_count ?? 0),
       first_purchase_rebate_done: boolValue(row.first_purchase_rebate_done),
       status: row.status
     })),
@@ -8701,13 +8742,8 @@ export async function ensureMobileExtras() {
   mobileExtrasReady = true;
 }
 
-/**
- * Resolve a scanned barcode (or qr_code) → SKU, find the oldest open
- * member_order_item in the user's store with that SKU, mark it written
- * off, and insert a writeoff_records row inside one transaction.
- */
 export async function createMobileWriteoff(rawCode, user) {
-  await initializeDatabase();
+  await ensureStoreInventoryTables();
   const code = (rawCode ?? '').trim();
   if (!code) return { ok: false, message: '条码为空' };
   if (!user?.storeId) return { ok: false, message: '当前账号未绑定门店' };
@@ -8718,77 +8754,308 @@ export async function createMobileWriteoff(rawCode, user) {
         SELECT product_skus.id, product_skus.sku_code, product_skus.barcode,
                product_skus.qr_code, products.name AS product_name,
                product_skus.redeem_points_price,
-               product_skus.sale_price
+               product_skus.sale_price,
+               product_skus.spec,
+               product_skus.unit,
+               COALESCE(store_inventory.quantity, 0) AS store_quantity
         FROM product_skus
         INNER JOIN products ON products.id = product_skus.product_id
+        LEFT JOIN store_inventory
+               ON store_inventory.sku_id = product_skus.id
+              AND store_inventory.store_id = $2
         WHERE product_skus.barcode = $1 OR product_skus.qr_code = $1 OR product_skus.sku_code = $1
         LIMIT 1
       `,
-      [code]
+      [code, Number(user.storeId)]
     )
   ).rows[0];
   if (!skuRow) return { ok: false, message: '未识别商品' };
+  const availableQuantity = Number(skuRow.store_quantity ?? 0);
+  if (availableQuantity <= 0) {
+    return { ok: false, skuId: String(skuRow.id), message: '门店库存不足，无法加入核销购物车' };
+  }
 
+  return {
+    ok: true,
+    skuId: String(skuRow.id),
+    product: {
+      skuId: String(skuRow.id),
+      name: skuRow.product_name,
+      sku: skuRow.sku_code,
+      spec: skuRow.spec ?? '',
+      unit: skuRow.unit ?? '',
+      price: Number(skuRow.sale_price ?? skuRow.redeem_points_price ?? 0),
+      points: Number(skuRow.redeem_points_price ?? 0),
+      availableQuantity
+    },
+    message: '已加入待付款购物车'
+  };
+}
+
+export async function resolveMobileCartPayment(user, items = []) {
+  await ensureStoreInventoryTables();
+  if (!user?.companyId || !user?.storeId) {
+    throw new Error('当前账号未绑定分公司或门店，无法发起支付');
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new Error('请先扫码添加商品');
+  }
+
+  const grouped = new Map();
+  for (const item of items) {
+    const skuId = Number(item?.skuId ?? item?.sku_id);
+    const quantity = Number(item?.quantity ?? 1);
+    if (!skuId || !Number.isInteger(quantity) || quantity <= 0) {
+      throw new Error('购物车商品数量无效');
+    }
+    grouped.set(skuId, (grouped.get(skuId) ?? 0) + quantity);
+  }
+
+  const skuIds = [...grouped.keys()];
+  const rows = (
+    await query(
+      `
+        SELECT
+          product_skus.id,
+          product_skus.sku_code,
+          product_skus.qr_code,
+          product_skus.barcode,
+          product_skus.spec,
+          product_skus.unit,
+          product_skus.sale_price,
+          product_skus.redeem_points_price,
+          products.name AS product_name,
+          COALESCE(store_inventory.quantity, 0) AS store_quantity
+        FROM product_skus
+        INNER JOIN products ON products.id = product_skus.product_id
+        LEFT JOIN store_inventory
+               ON store_inventory.sku_id = product_skus.id
+              AND store_inventory.store_id = $2
+        WHERE product_skus.id = ANY($1::int[])
+      `,
+      [skuIds, Number(user.storeId)]
+    )
+  ).rows;
+
+  const bySku = new Map(rows.map((row) => [Number(row.id), row]));
+  const cartItems = [];
+  for (const [skuId, quantity] of grouped.entries()) {
+    const row = bySku.get(skuId);
+    if (!row) throw new Error(`SKU #${skuId} 不存在`);
+    if (Number(row.store_quantity ?? 0) < quantity) {
+      throw new Error(`${row.product_name} 库存不足，当前可用 ${Number(row.store_quantity ?? 0)}`);
+    }
+    const unitPrice = Math.max(
+      0,
+      toNumber(row.sale_price) || toNumber(row.redeem_points_price) || 0
+    );
+    cartItems.push({
+      skuId: String(row.id),
+      skuCode: row.sku_code,
+      barcode: row.barcode || row.qr_code || row.sku_code,
+      productName: row.product_name,
+      spec: row.spec ?? '',
+      unit: row.unit ?? '',
+      quantity,
+      unitPrice,
+      points: Number(row.redeem_points_price ?? 0),
+      subtotal: unitPrice * quantity
+    });
+  }
+
+  const amount = cartItems.reduce((sum, item) => sum + item.subtotal, 0);
+  if (amount <= 0) {
+    throw new Error('购物车支付金额无效');
+  }
+
+  return {
+    amount: Math.floor(amount * 100) / 100,
+    items: cartItems
+  };
+}
+
+export async function completeCartPaymentWriteoff(paymentOrderId, actor = '系统') {
+  await ensurePaymentTables();
+  await ensureStoreInventoryTables();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const itemRow = (
+    const order = (
       await client.query(
         `
-          SELECT moi.id AS item_id, moi.member_order_id, mo.sales_staff_name
-          FROM member_order_items moi
-          INNER JOIN member_orders mo ON mo.id = moi.member_order_id
-          WHERE moi.sku_id = $1
-            AND mo.store_id = $2
-            AND mo.delete_status = '正常'
-            AND moi.writeoff_status = '待核销'
-          ORDER BY mo.created_at ASC
-          LIMIT 1
+          SELECT *
+          FROM payment_orders
+          WHERE id = $1
+          FOR UPDATE
         `,
-        [skuRow.id, Number(user.storeId)]
+        [Number(paymentOrderId)]
       )
     ).rows[0];
-
-    if (!itemRow) {
-      await client.query('ROLLBACK');
-      return createDirectMobileWriteoffOrder(skuRow, user, code);
+    if (!order || order.source_type !== 'cart') {
+      await client.query('COMMIT');
+      return null;
     }
 
-    const writeoffTime = new Date().toLocaleString('zh-CN', { hour12: false });
-    const insertResult = await client.query(
-      `
-        INSERT INTO writeoff_records
-          (member_order_id, sku_id, store_id, sales_staff_name, product_code, status, writeoff_time, remark)
-        VALUES ($1, $2, $3, $4, $5, '成功', $6, '移动端扫码核销')
-        RETURNING id
-      `,
-      [
-        itemRow.member_order_id,
-        skuRow.id,
-        Number(user.storeId),
-        user.fullName ?? user.name ?? '移动端用户',
-        code,
-        writeoffTime
-      ]
-    );
+    const existing = (
+      await client.query(
+        `SELECT id FROM member_orders WHERE payment_order_id = $1 LIMIT 1`,
+        [Number(paymentOrderId)]
+      )
+    ).rows[0];
+    if (existing) {
+      await client.query('COMMIT');
+      return String(existing.id);
+    }
 
-    await client.query(
-      `UPDATE member_order_items SET writeoff_status = '已核销' WHERE id = $1`,
-      [itemRow.item_id]
-    );
+    const items = Array.isArray(order.cart_items_json) ? order.cart_items_json : [];
+    if (items.length === 0) {
+      throw new Error('支付单缺少购物车明细');
+    }
+
+    const ts = now();
+    const memberOrder = (
+      await client.query(
+        `
+          INSERT INTO member_orders
+            (order_no, company_id, store_id, status, customer_type, member_id, sales_staff_name,
+             member_name, member_phone, total_amount, purchase_order_id, payment_order_id,
+             stock_deducted, writeoff_quota_rebated, created_at, updated_at)
+          VALUES ($1, $2, $3, '已核销', 'walk_in', NULL, $4, '散客', '', $5, NULL, $6, TRUE, FALSE, $7, $7)
+          RETURNING id
+        `,
+        [
+          `MO-PAY-${order.order_no}`,
+          Number(order.company_id),
+          Number(order.store_id),
+          order.sales_staff_name || actor,
+          Number(order.paid_amount || order.amount),
+          Number(paymentOrderId),
+          ts
+        ]
+      )
+    ).rows[0];
+    const memberOrderId = Number(memberOrder.id);
+
+    const inventoryWarnings = [];
+    for (const item of items) {
+      const skuId = Number(item.skuId);
+      const quantity = Number(item.quantity || 0);
+      const unitPrice = Number(item.unitPrice || 0);
+      if (!skuId || quantity <= 0) {
+        throw new Error('购物车明细无效');
+      }
+
+      const inv = (
+        await client.query(
+          `SELECT id, quantity, safety_stock FROM store_inventory WHERE store_id = $1 AND sku_id = $2 FOR UPDATE`,
+          [Number(order.store_id), skuId]
+        )
+      ).rows[0];
+      if (!inv || Number(inv.quantity) < quantity) {
+        throw new Error(`${item.productName ?? item.skuCode ?? `SKU #${skuId}`} 库存不足`);
+      }
+      const nextQuantity = Number(inv.quantity) - quantity;
+      await client.query(
+        `UPDATE store_inventory SET quantity = $1, updated_at = $3 WHERE id = $2`,
+        [nextQuantity, inv.id, ts]
+      );
+      if (Number(inv.safety_stock ?? 0) > 0 && nextQuantity <= Number(inv.safety_stock ?? 0)) {
+        inventoryWarnings.push({
+          skuId,
+          productName: item.productName ?? '',
+          skuCode: item.skuCode ?? '',
+          remaining: nextQuantity,
+          threshold: Number(inv.safety_stock ?? 0)
+        });
+      }
+      await client.query(
+        `INSERT INTO inventory_logs (company_id, sku_id, source_type, source_id, change_type, quantity, balance_after, remark, created_at, store_id)
+         VALUES ($1, $2, 'mobile_cart_writeoff', $3, '出库', $4, $5, '门店付款后核销扣减库存', NOW(), $6)`,
+        [Number(order.company_id), skuId, String(memberOrderId), -quantity, nextQuantity, Number(order.store_id)]
+      );
+      await client.query(
+        `
+          INSERT INTO member_order_items
+            (member_order_id, sku_id, quantity, unit_price, point_rebate_base, writeoff_status)
+          VALUES ($1, $2, $3, $4, $5, '已核销')
+        `,
+        [memberOrderId, skuId, quantity, unitPrice, unitPrice * quantity]
+      );
+      await client.query(
+        `
+          INSERT INTO writeoff_records
+            (member_order_id, sku_id, store_id, sales_staff_name, product_code, status, writeoff_time, remark)
+          VALUES ($1, $2, $3, $4, $5, '成功', $6, '移动端购物车付款后核销')
+        `,
+        [
+          memberOrderId,
+          skuId,
+          Number(order.store_id),
+          order.sales_staff_name || actor,
+          item.barcode || item.skuCode || String(skuId),
+          new Date().toLocaleString('zh-CN', { hour12: false })
+        ]
+      );
+    }
 
     await client.query('COMMIT');
 
-    return {
-      ok: true,
-      id: String(insertResult.rows[0].id),
-      skuId: String(skuRow.id),
-      product: {
-        name: skuRow.product_name,
-        sku: skuRow.sku_code,
-        points: Number(skuRow.redeem_points_price ?? 0)
-      }
-    };
+    for (const warning of inventoryWarnings) {
+      queueNotification(
+        createCompanyNotification(order.company_id, {
+          type: 'store_inventory_warning',
+          title: '门店库存预警',
+          body: `${warning.productName || warning.skuCode} 门店库存 ${warning.remaining}，已低于安全库存 ${warning.threshold}`,
+          actionLabel: '查看库存',
+          actionUrl: '/dashboard/inventory',
+          metadata: {
+            paymentOrderId,
+            companyId: order.company_id,
+            storeId: order.store_id,
+            skuId: warning.skuId,
+            remaining: warning.remaining,
+            threshold: warning.threshold
+          }
+        })
+      );
+    }
+
+    const ratio = await getWriteoffOrderQuotaRebateRatio();
+    const rebateAmount = Math.max(0, Number(order.paid_amount || order.amount) * ratio);
+    if (rebateAmount > 0) {
+      await changeStoreOrderQuota(order.store_id, rebateAmount, '散客订单核销自动回弹门店订货额度', actor);
+      await changeCompanyOrderQuota(order.company_id, rebateAmount, '散客订单核销自动回弹分公司订货额度', actor);
+      await createAutoReturnOrderQuotaAdjustment({
+        companyId: order.company_id,
+        amount: rebateAmount,
+        adjustmentType: '核销回弹',
+        reason: `散客订单付款核销成功，按基础设置比例 ${ratio} 自动回弹订货额度`,
+        createdBy: actor,
+        sourceMemberOrderId: memberOrderId
+      });
+      await query(
+        `UPDATE member_orders SET writeoff_quota_rebated = TRUE, updated_by = $1, updated_at = $2 WHERE id = $3`,
+        [actor, now(), memberOrderId]
+      );
+    }
+
+    queueNotification(
+      createCompanyNotification(order.company_id, {
+        type: 'walk_in_cart_writeoff_paid',
+        title: '散客订单付款核销完成',
+        body: `${order.order_no} 已付款并完成 ${items.length} 个 SKU 核销`,
+        actionLabel: '查看散客订单',
+        actionUrl: `/dashboard/member-orders/${memberOrderId}`,
+        metadata: {
+          paymentOrderId,
+          memberOrderId,
+          companyId: order.company_id,
+          storeId: order.store_id
+        }
+      })
+    );
+
+    return String(memberOrderId);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -8858,8 +9125,16 @@ export async function getMobileKpiOverview(user) {
   const totalPoints = Number(
     (
       await query(
-        `SELECT COALESCE(SUM(points_cost), 0)::numeric AS s FROM point_redeem_orders`,
-        []
+        `
+          SELECT COALESCE(SUM(ps.redeem_points_price), 0)::numeric AS s
+          FROM writeoff_records w
+          INNER JOIN member_orders mo ON mo.id = w.member_order_id
+          INNER JOIN product_skus ps ON ps.id = w.sku_id
+          WHERE w.status = '成功'
+            AND mo.delete_status = '正常'
+            ${user?.companyId ? 'AND mo.company_id = $1' : ''}
+        `,
+        companyParams
       )
     ).rows[0].s
   );
@@ -9506,40 +9781,118 @@ export async function getStoreSummary(storeId) {
 }
 
 export async function getStoreTodayStats(storeId, staffName) {
-  if (!storeId) return { storeVerifyCount: 0, myVerifyCount: 0, todayPoints: 0 };
+  if (!storeId) return { storeVerifyCount: 0, myVerifyCount: 0, todayPoints: 0, totalPoints: 0 };
   await initializeDatabase();
-  const today = `TO_CHAR(NOW(), 'YYYY/MM/DD')`;
   const storeRow = (
     await query(
       `SELECT COUNT(*)::int AS c,
               COALESCE(SUM(ps.redeem_points_price), 0)::numeric AS pts
        FROM writeoff_records w
+       INNER JOIN member_orders mo ON mo.id = w.member_order_id
        LEFT JOIN product_skus ps ON ps.id = w.sku_id
        WHERE w.store_id = $1 AND w.status = '成功'
-         AND w.writeoff_time::text LIKE ${today} || '%'`,
+         AND mo.created_at >= CURRENT_DATE`,
       [Number(storeId)]
     )
   ).rows[0];
   let myCount = 0;
+  let totalPoints = 0;
   if (staffName) {
-    myCount = Number(
+    const myRow = (
+      await query(
+        `SELECT COUNT(*)::int AS c,
+                COALESCE(SUM(ps.redeem_points_price), 0)::numeric AS pts
+           FROM writeoff_records w
+           INNER JOIN member_orders mo ON mo.id = w.member_order_id
+           LEFT JOIN product_skus ps ON ps.id = w.sku_id
+           WHERE w.store_id = $1 AND w.status = '成功'
+             AND w.sales_staff_name = $2
+             AND mo.created_at >= CURRENT_DATE`,
+        [Number(storeId), staffName]
+      )
+    ).rows[0];
+    myCount = Number(myRow?.c ?? 0);
+    totalPoints = Number(
       (
         await query(
-          `SELECT COUNT(*)::int AS c
-           FROM writeoff_records
-           WHERE store_id = $1 AND status = '成功'
-             AND sales_staff_name = $2
-             AND writeoff_time::text LIKE ${today} || '%'`,
+          `
+            SELECT COALESCE(SUM(ps.redeem_points_price), 0)::numeric AS pts
+            FROM writeoff_records w
+            LEFT JOIN product_skus ps ON ps.id = w.sku_id
+            WHERE w.store_id = $1 AND w.status = '成功'
+              AND w.sales_staff_name = $2
+          `,
           [Number(storeId), staffName]
         )
-      ).rows[0].c
+      ).rows[0]?.pts ?? 0
     );
   }
   return {
     storeVerifyCount: Number(storeRow?.c ?? 0),
     myVerifyCount: myCount,
-    todayPoints: Number(storeRow?.pts ?? 0)
+    todayPoints: Number(storeRow?.pts ?? 0),
+    totalPoints
   };
+}
+
+export async function getMobileRanking(user, period = 'daily') {
+  await initializeDatabase();
+  const params = [];
+  const where = [
+    `w.status = '成功'`,
+    `mo.delete_status = '正常'`
+  ];
+  if (user?.companyId) {
+    params.push(Number(user.companyId));
+    where.push(`mo.company_id = $${params.length}`);
+  }
+  if (user?.storeId) {
+    params.push(Number(user.storeId));
+    where.push(`mo.store_id = $${params.length}`);
+  }
+  if (period === 'daily') {
+    where.push(`mo.created_at >= CURRENT_DATE`);
+  } else if (period === 'weekly') {
+    where.push(`mo.created_at >= NOW() - INTERVAL '7 days'`);
+  } else {
+    where.push(`mo.created_at >= NOW() - INTERVAL '30 days'`);
+  }
+
+  const rows = (
+    await query(
+      `
+        SELECT
+          w.sales_staff_name,
+          COALESCE(cs.name, c.name, '-') AS org_name,
+          COUNT(*)::int AS verify_count,
+          COALESCE(SUM(ps.redeem_points_price), 0)::numeric AS points
+        FROM writeoff_records w
+        INNER JOIN member_orders mo ON mo.id = w.member_order_id
+        INNER JOIN companies c ON c.id = mo.company_id
+        LEFT JOIN company_stores cs ON cs.id = mo.store_id
+        LEFT JOIN product_skus ps ON ps.id = w.sku_id
+        WHERE ${where.join(' AND ')}
+        GROUP BY w.sales_staff_name, COALESCE(cs.name, c.name, '-')
+        ORDER BY points DESC, verify_count DESC, w.sales_staff_name ASC
+        LIMIT 20
+      `,
+      params
+    )
+  ).rows;
+
+  const meNames = new Set([
+    String(user?.fullName ?? ''),
+    String(user?.name ?? ''),
+    String(user?.account ?? '')
+  ].filter(Boolean));
+
+  return rows.map((row, index) => ({
+    rank: index + 1,
+    name: row.sales_staff_name || '未知员工',
+    org: row.org_name || '-',
+    points: Number(row.points ?? 0),
+    isMe: meNames.has(row.sales_staff_name || '')
+  }));
 }
 
 /* ============================================================
@@ -9737,6 +10090,7 @@ export async function ensurePaymentTables() {
       sqb_client_sn TEXT NOT NULL DEFAULT '',
       sqb_sn TEXT NOT NULL DEFAULT '',
       sqb_qr_code TEXT NOT NULL DEFAULT '',
+      cart_items_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       paid_at TIMESTAMPTZ,
       settled_at TIMESTAMPTZ,
       refunded_at TIMESTAMPTZ,
@@ -9747,6 +10101,9 @@ export async function ensurePaymentTables() {
       updated_at TIMESTAMPTZ NOT NULL
     );
   `);
+  await query(`ALTER TABLE payment_orders ADD COLUMN IF NOT EXISTS cart_items_json JSONB NOT NULL DEFAULT '[]'::jsonb;`);
+  await query(`ALTER TABLE member_orders ADD COLUMN IF NOT EXISTS payment_order_id INTEGER REFERENCES payment_orders(id) ON DELETE SET NULL;`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_member_orders_payment_order ON member_orders(payment_order_id) WHERE payment_order_id IS NOT NULL;`);
   await query(`CREATE INDEX IF NOT EXISTS idx_payment_orders_status ON payment_orders(status);`);
   await query(`CREATE INDEX IF NOT EXISTS idx_payment_orders_company ON payment_orders(company_id);`);
   await query(`CREATE INDEX IF NOT EXISTS idx_payment_orders_store ON payment_orders(store_id);`);
@@ -9832,8 +10189,8 @@ export async function createPaymentOrder(input) {
       `
         INSERT INTO payment_orders
           (order_no, source_type, source_id, company_id, store_id, sales_staff_name,
-           amount, status, sqb_terminal_sn, sqb_client_sn, remark, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, '待支付', $8, $9, $10, $11, $11)
+           amount, status, sqb_terminal_sn, sqb_client_sn, remark, cart_items_json, created_at, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, '待支付', $8, $9, $10, $11::jsonb, $12, $12)
         RETURNING id, order_no
       `,
       [
@@ -9847,6 +10204,7 @@ export async function createPaymentOrder(input) {
         input.sqbTerminalSn ?? '',
         orderNo, // use our order_no as client_sn for SQB (must be globally unique per merchant)
         input.remark ?? '',
+        JSON.stringify(input.cartItems ?? []),
         ts
       ]
     );

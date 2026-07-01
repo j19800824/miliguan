@@ -188,6 +188,8 @@ export default async function CompanyDetailPage({
                       <TableHead>编码</TableHead>
                       <TableHead>负责人</TableHead>
                       <TableHead>负责人电话</TableHead>
+                      <TableHead>库存总量</TableHead>
+                      <TableHead>库存 SKU</TableHead>
                       <TableHead>可用订货额</TableHead>
                       <TableHead>累计订货额度</TableHead>
                       <TableHead>状态</TableHead>
@@ -200,6 +202,8 @@ export default async function CompanyDetailPage({
                         <TableCell>{row.code}</TableCell>
                         <TableCell>{row.manager_name}</TableCell>
                         <TableCell>{row.manager_phone}</TableCell>
+                        <TableCell>{row.inventory_quantity}</TableCell>
+                        <TableCell>{row.inventory_sku_count}</TableCell>
                         <TableCell>{row.available_order_quota}</TableCell>
                         <TableCell>{row.total_order_quota}</TableCell>
                         <TableCell><StatusBadge status={row.status} /></TableCell>

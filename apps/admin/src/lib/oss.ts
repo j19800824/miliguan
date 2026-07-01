@@ -12,9 +12,15 @@ export function getOssConfig() {
     accessKeyId: readEnv('OSS_ACCESS_KEY_ID'),
     accessKeySecret: readEnv('OSS_ACCESS_KEY_SECRET'),
     endpoint: readEnv('OSS_ENDPOINT'),
-    baseUrl: readEnv('OSS_BASE_URL'),
+    baseUrl: readEnv('APP_RELEASE_CDN_BASE_URL') || readEnv('OSS_BASE_URL'),
     uploadPrefix: readEnv('OSS_UPLOAD_PREFIX') || 'products'
   };
+}
+
+export function buildPublicOssUrl(key: string): string {
+  const baseUrl = getOssConfig().baseUrl.replace(/\/+$/, '');
+  const normalizedKey = String(key || '').replace(/^\/+/, '');
+  return baseUrl && normalizedKey ? `${baseUrl}/${normalizedKey}` : '';
 }
 
 export function isOssEnabled() {

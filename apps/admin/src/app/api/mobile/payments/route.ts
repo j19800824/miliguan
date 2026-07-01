@@ -3,10 +3,11 @@ import { getMobileSession } from '@/lib/auth/mobile';
 import { createPayment } from '@/lib/payment/orchestrator';
 
 interface CreateBody {
-  sourceType?: 'writeoff' | 'topup' | 'standalone';
+  sourceType?: 'writeoff' | 'topup' | 'standalone' | 'cart';
   sourceId?: string | number;
   amount?: number;
   subject?: string;
+  items?: Array<{ skuId?: string | number; sku_id?: string | number; quantity?: number }>;
 }
 
 export async function POST(req: Request) {
@@ -19,6 +20,7 @@ export async function POST(req: Request) {
       sourceId: body.sourceId,
       amount: body.amount,
       subject: body.subject ?? '米粒冠门店核销',
+      items: body.items,
       user,
     });
     return NextResponse.json(result);

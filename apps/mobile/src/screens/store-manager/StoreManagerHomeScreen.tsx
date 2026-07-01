@@ -53,6 +53,7 @@ export function StoreManagerHomeScreen({ user }: StoreManagerHomeScreenProps) {
     storeVerifyCount: 0,
     myVerifyCount: 0,
     todayPoints: 0,
+    totalPoints: 0,
   });
   const [showReplenishment, setShowReplenishment] = useState(false);
 
@@ -108,7 +109,7 @@ export function StoreManagerHomeScreen({ user }: StoreManagerHomeScreenProps) {
             <Sparkle size={14} color={Colors.goldDark} />
             <View style={styles.pointsTextWrap}>
               <Text style={styles.pointsNum}>
-                {(user.points ?? 0).toLocaleString()}
+                {(stats.totalPoints ?? user.points ?? 0).toLocaleString()}
               </Text>
               <Text style={styles.pointsUnit}>积分</Text>
             </View>

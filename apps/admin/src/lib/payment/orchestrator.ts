@@ -24,6 +24,8 @@ import {
   // writeoff
   getWriteoffPayableAmount,
   revertWriteoff,
+  resolveMobileCartPayment,
+  completeCartPaymentWriteoff,
   // SQB credentials per store
   getStoreTerminal,
 } from '@/lib/database.js';
@@ -45,10 +47,11 @@ interface Context {
 }
 
 interface CreatePaymentInput {
-  sourceType?: 'writeoff' | 'topup' | 'standalone';
+  sourceType?: 'writeoff' | 'topup' | 'standalone' | 'cart';
   sourceId?: string | number;
   amount?: number;  // yuan; resolved from sourceId when omitted (writeoff)
   subject?: string;
+  items?: Array<{ skuId?: string | number; sku_id?: string | number; quantity?: number }>;
   user: Context;
 }
 
@@ -77,6 +80,12 @@ export async function createPayment(
   }
 
   let amount = input.amount;
+  let cartItems: unknown[] = [];
+  if (input.sourceType === 'cart') {
+    const cart = await resolveMobileCartPayment(input.user, input.items ?? []);
+    amount = cart.amount;
+    cartItems = cart.items;
+  }
   if (amount == null && input.sourceType === 'writeoff' && input.sourceId) {
     amount = (await getWriteoffPayableAmount(input.sourceId)) ?? 0;
   }
@@ -93,6 +102,7 @@ export async function createPayment(
     amount,
     sqbTerminalSn: '',
     remark: input.subject ?? '',
+    cartItems,
   });
 
   // Try SQB precreate. Fall through to mock when not configured.
@@ -169,6 +179,10 @@ export async function settlePayment(input: {
     input.payerUid ?? '',
     input.payWay ?? '',
     input.sqbSn ?? '',
+  );
+  await completeCartPaymentWriteoff(
+    input.paymentOrderId,
+    input.payerUid || input.payWay || '系统',
   );
 
   const splits = await computeSplitsForPayment(input.paymentOrderId);

@@ -10,7 +10,16 @@ export interface VerifyScanRequest {
 export interface VerifyScanResult {
   success: boolean;
   writeoffId?: string;
-  product?: { name: string; sku: string; points: number };
+  product?: {
+    skuId?: string;
+    name: string;
+    sku: string;
+    spec?: string;
+    unit?: string;
+    price?: number;
+    points: number;
+    availableQuantity?: number;
+  };
   message?: string;
 }
 
@@ -28,7 +37,15 @@ export async function postVerifyScan(
     }
     return {
       success: true,
-      product: { name: '低GI免煮米 2kg', sku: 'MLG-2KG-001', points: 60 },
+      product: {
+        skuId: '1',
+        name: '低GI免煮米 2kg',
+        sku: 'MLG-2KG-001',
+        spec: '2kg',
+        price: 60,
+        points: 60,
+        availableQuantity: 99,
+      },
     };
   }
   return getApiClient()<VerifyScanResult>('/api/mobile/verify/scan', {
