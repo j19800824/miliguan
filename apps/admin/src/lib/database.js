@@ -6223,6 +6223,71 @@ async function createMemberOrderRecord(payload) {
   return orderId;
 }
 
+async function getLatestWriteoffForMemberOrder(memberOrderId, skuId) {
+  return (
+    await query(
+      `
+        SELECT id
+        FROM writeoff_records
+        WHERE member_order_id = $1 AND sku_id = $2
+        ORDER BY id DESC
+        LIMIT 1
+      `,
+      [Number(memberOrderId), Number(skuId)]
+    )
+  ).rows[0];
+}
+
+async function createDirectMobileWriteoffOrder(skuRow, user, rawCode) {
+  if (!user?.companyId || !user?.storeId) {
+    return { ok: false, message: '当前账号未绑定分公司或门店' };
+  }
+  const inventory = (
+    await query(
+      `
+        SELECT quantity
+        FROM company_inventory
+        WHERE company_id = $1 AND sku_id = $2 AND delete_status = '正常'
+        LIMIT 1
+      `,
+      [Number(user.companyId), Number(skuRow.id)]
+    )
+  ).rows[0];
+  if (!inventory || toNumber(inventory.quantity) < 1) {
+    return { ok: false, message: '库存不足，无法完成扫码核销' };
+  }
+  const unitPrice = Math.max(
+    0,
+    toNumber(skuRow.sale_price) || toNumber(skuRow.redeem_points_price) || 0
+  );
+  const orderId = await createMemberOrderRecord({
+    order_no: `MO-SCAN-${Date.now()}`,
+    company_id: Number(user.companyId),
+    store_id: Number(user.storeId),
+    status: '已核销',
+    customer_type: 'walk_in',
+    member_name: '散客',
+    member_phone: '',
+    sales_staff_name: user.fullName ?? user.name ?? user.account ?? '移动端用户',
+    sku_id: Number(skuRow.id),
+    quantity: 1,
+    unit_price: unitPrice,
+    purchase_order_id: 'none'
+  });
+  const writeoff = await getLatestWriteoffForMemberOrder(orderId, skuRow.id);
+  return {
+    ok: true,
+    id: writeoff ? String(writeoff.id) : String(orderId),
+    skuId: String(skuRow.id),
+    product: {
+      name: skuRow.product_name,
+      sku: skuRow.sku_code,
+      points: Number(skuRow.redeem_points_price ?? 0)
+    },
+    message: `已按散客订单直接核销 ${rawCode}`
+  };
+}
+
 async function updateMemberOrderRecord(id, payload, actorName = '后台用户') {
   const purchaseOrderId =
     payload.purchase_order_id && payload.purchase_order_id !== 'none'
@@ -8652,7 +8717,8 @@ export async function createMobileWriteoff(rawCode, user) {
       `
         SELECT product_skus.id, product_skus.sku_code, product_skus.barcode,
                product_skus.qr_code, products.name AS product_name,
-               product_skus.redeem_points_price
+               product_skus.redeem_points_price,
+               product_skus.sale_price
         FROM product_skus
         INNER JOIN products ON products.id = product_skus.product_id
         WHERE product_skus.barcode = $1 OR product_skus.qr_code = $1 OR product_skus.sku_code = $1
@@ -8685,7 +8751,7 @@ export async function createMobileWriteoff(rawCode, user) {
 
     if (!itemRow) {
       await client.query('ROLLBACK');
-      return { ok: false, message: '已核销或无可核销订单' };
+      return createDirectMobileWriteoffOrder(skuRow, user, code);
     }
 
     const writeoffTime = new Date().toLocaleString('zh-CN', { hour12: false });

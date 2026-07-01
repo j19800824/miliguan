@@ -26,6 +26,8 @@ const SUPPORTED_BARCODES = [
   'upc_e',
 ] as const;
 
+const SHOW_SCAN_DEMO_TRIGGERS = __DEV__;
+
 export function ScanScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -274,8 +276,8 @@ export function ScanScreen() {
         </View>
       )}
 
-      {/* Demo trigger row — preserved for Maestro E2E and quick manual testing */}
-      {state === 'scanning' && !submitting && (
+      {/* Development-only trigger row for local QA; hidden from production builds. */}
+      {SHOW_SCAN_DEMO_TRIGGERS && state === 'scanning' && !submitting && (
         <View style={styles.demoRow}>
           <Text style={styles.demoHint}>演示触发：</Text>
           <TouchableOpacity
