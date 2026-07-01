@@ -7,11 +7,17 @@ import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { LoginScreen } from './src/screens/LoginScreen';
+import { StartupSplashScreen } from './src/components/StartupSplashScreen';
 import { BossNavigator } from './src/navigation/BossNavigator';
 import { BranchGMNavigator } from './src/navigation/BranchGMNavigator';
 import { StoreManagerNavigator } from './src/navigation/StoreManagerNavigator';
 import { SalesStaffNavigator } from './src/navigation/SalesStaffNavigator';
 import { bootstrapApiClient } from './src/services/api/client';
+import {
+  loadCachedStartupSplash,
+  refreshStartupSplash,
+  type StartupSplashConfig,
+} from './src/services/api/app-splash';
 import { bootstrapAuth, logout as apiLogout, type AuthUser } from './src/services/auth/auth';
 import { registerPushToken, unregisterPushToken } from './src/services/push';
 import { replayQueue, startQueueReplayWatcher } from './src/services/api/queue';
@@ -22,6 +28,8 @@ SplashScreen.preventAutoHideAsync();
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [authReady, setAuthReady] = useState(false);
+  const [startupSplash, setStartupSplash] = useState<StartupSplashConfig | null>(null);
+  const [startupSplashDone, setStartupSplashDone] = useState(false);
 
   const [fontsLoaded] = useFonts({
     'AlibabaPuHuiTi-Regular': require('./assets/fonts/Alibaba-PuHuiTi-Regular.ttf'),
@@ -39,6 +47,21 @@ export default function App() {
         setUser(restored);
         setAuthReady(true);
       }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // Show the last cached startup image immediately, then refresh the next one in the background.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const cached = await loadCachedStartupSplash();
+      if (active) setStartupSplash(cached);
+
+      const fresh = await refreshStartupSplash();
+      if (active) setStartupSplash(fresh);
     })();
     return () => {
       active = false;
@@ -63,12 +86,24 @@ export default function App() {
   }, [user]);
 
   useEffect(() => {
-    if (fontsLoaded && authReady) {
+    if (fontsLoaded && authReady && startupSplash) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, authReady]);
+  }, [fontsLoaded, authReady, startupSplash]);
 
-  if (!fontsLoaded || !authReady) return null;
+  if (!fontsLoaded || !authReady || !startupSplash) return null;
+
+  if (startupSplash.enabled && !startupSplashDone) {
+    return (
+      <SafeAreaProvider>
+        <StatusBar style="dark" />
+        <StartupSplashScreen
+          config={startupSplash}
+          onDone={() => setStartupSplashDone(true)}
+        />
+      </SafeAreaProvider>
+    );
+  }
 
   const handleLogout = () => {
     // Snap UI to login screen immediately. The server sign-out + push

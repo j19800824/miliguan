@@ -1175,6 +1175,78 @@ async function migrateTables() {
       now()
     ]
   );
+  await query(
+    `
+      INSERT INTO system_settings
+        (setting_key, category, setting_name, setting_value, description, updated_by, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (setting_key) DO NOTHING
+    `,
+    [
+      'mobile.splash.enabled',
+      '移动端启动图',
+      '是否启用 App 启动图',
+      'true',
+      '开启后 App 启动时展示品牌启动图；关闭后直接进入登录或首页。',
+      '系统',
+      now(),
+      now()
+    ]
+  );
+  await query(
+    `
+      INSERT INTO system_settings
+        (setting_key, category, setting_name, setting_value, description, updated_by, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (setting_key) DO NOTHING
+    `,
+    [
+      'mobile.splash.image_url',
+      '移动端启动图',
+      'App 启动图 URL',
+      '',
+      '留空时使用服务器默认启动图；填写 HTTPS 图片地址后，App 会下载并在下次启动优先使用。',
+      '系统',
+      now(),
+      now()
+    ]
+  );
+  await query(
+    `
+      INSERT INTO system_settings
+        (setting_key, category, setting_name, setting_value, description, updated_by, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (setting_key) DO NOTHING
+    `,
+    [
+      'mobile.splash.version',
+      '移动端启动图',
+      'App 启动图版本号',
+      'default-20260701',
+      '更换启动图后修改这个版本号，App 会识别为新图并重新缓存。',
+      '系统',
+      now(),
+      now()
+    ]
+  );
+  await query(
+    `
+      INSERT INTO system_settings
+        (setting_key, category, setting_name, setting_value, description, updated_by, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      ON CONFLICT (setting_key) DO NOTHING
+    `,
+    [
+      'mobile.splash.duration_ms',
+      '移动端启动图',
+      'App 启动图展示时长',
+      '1200',
+      'App 内品牌启动图展示时长，单位毫秒。',
+      '系统',
+      now(),
+      now()
+    ]
+  );
   await query(`
     UPDATE system_settings
     SET setting_key = 'order_quota.cash_ratio'
@@ -2934,6 +3006,33 @@ export async function listSystemSettings() {
     updated_by: row.updated_by,
     updated_at: new Date(row.updated_at).toLocaleString('zh-CN', { hour12: false })
   }));
+}
+
+export async function getMobileAppSplashConfig(defaultImageUrl = '') {
+  await initializeDatabase();
+  const rows = (
+    await query(
+      `
+        SELECT setting_key, setting_value
+        FROM system_settings
+        WHERE setting_key IN (
+          'mobile.splash.enabled',
+          'mobile.splash.image_url',
+          'mobile.splash.version',
+          'mobile.splash.duration_ms'
+        )
+      `
+    )
+  ).rows;
+  const settings = Object.fromEntries(rows.map((row) => [row.setting_key, row.setting_value]));
+  const duration = Number(settings['mobile.splash.duration_ms'] ?? 1200);
+
+  return {
+    enabled: String(settings['mobile.splash.enabled'] ?? 'true') !== 'false',
+    imageUrl: String(settings['mobile.splash.image_url'] || defaultImageUrl || ''),
+    version: String(settings['mobile.splash.version'] || 'default'),
+    durationMs: Number.isFinite(duration) ? Math.max(0, Math.min(duration, 5000)) : 1200
+  };
 }
 
 export async function updateSystemSetting(id, payload) {
