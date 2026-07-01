@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSession, getMobileAdminByPhone, verifyLoginOtp } from '@/lib/database.js';
+import { createSession, getMobileAdminByPhone, markStaffLastLogin, verifyLoginOtp } from '@/lib/database.js';
 import { signAdminJwt } from '@/lib/auth/jwt';
 import { auditRoute } from '@/lib/audit';
 
@@ -25,6 +25,7 @@ export async function POST(req: Request) {
         }
 
         const sessionId = await createSession(user.id);
+        await markStaffLastLogin(user.id);
         const token = await signAdminJwt({
           sub: user.id,
           sid: sessionId,

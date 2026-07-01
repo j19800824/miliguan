@@ -52,6 +52,24 @@ function now() {
   return new Date().toISOString();
 }
 
+function formatShanghaiDateTime(date = new Date()) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('zh-CN', {
+      timeZone: 'Asia/Shanghai',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+      .formatToParts(date)
+      .map((part) => [part.type, part.value])
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
 async function query(text, values = []) {
   return pool.query(text, values);
 }
@@ -3195,6 +3213,32 @@ export async function getPermissionsByRoleId(roleId) {
   return rows.map((row) => row.code);
 }
 
+async function inferStaffDepartmentByRoleId(roleId) {
+  const row = (
+    await query('SELECT role_name, scope FROM roles WHERE id = $1', [Number(roleId)])
+  ).rows[0];
+  if (!row) {
+    throw new Error('请选择有效的岗位角色');
+  }
+  const scopeDepartmentMap = {
+    平台: '总公司',
+    分公司: '分公司',
+    门店: '门店'
+  };
+  return scopeDepartmentMap[row.scope] ?? row.role_name ?? '未分配';
+}
+
+export async function markStaffLastLogin(staffId) {
+  await initializeDatabase();
+  const loginTime = formatShanghaiDateTime();
+  await query('UPDATE admin_staff SET last_login = $1, updated_at = $2 WHERE id = $3', [
+    loginTime,
+    now(),
+    Number(staffId)
+  ]);
+  return loginTime;
+}
+
 function mapAdminUser(row, permissions) {
   return {
     id: String(row.id),
@@ -3261,6 +3305,7 @@ async function getStaffByAccount(account, password, loginScope = 'admin') {
       row.id
     ]);
   }
+  await markStaffLastLogin(row.id);
   const permissions = await getPermissionsByRoleId(row.role_id);
   return mapAdminUser(row, permissions);
 }
@@ -4514,12 +4559,12 @@ function normalizeStaffInput(input) {
     input.name,
     input.account,
     input.password ?? '',
-    input.department,
+    input.department ?? '未分配',
     Number(input.role_id),
     input.status,
     input.phone,
     input.email,
-    input.last_login
+    input.last_login ?? '从未登录'
   ];
 }
 
@@ -8148,7 +8193,9 @@ export async function createRecord(entity, payload, actorName = '后台用户', 
         normalizedPayload = {
           ...payload,
           phone,
-          password: await hashPassword(generateAccountPassword())
+          department: await inferStaffDepartmentByRoleId(payload.role_id),
+          password: await hashPassword(generateAccountPassword()),
+          last_login: '从未登录'
         };
       }
       const values = config.normalize(normalizedPayload);
@@ -8198,18 +8245,26 @@ export async function updateRecord(entity, id, payload, actorName = '后台用�
         throw new Error('不支持的资源类型');
       }
       const timestamp = now();
-      const nextPayload =
-        entity === 'staff'
-          ? {
-              ...payload,
-              password:
-                payload.password && String(payload.password).trim().length > 0
-                  ? await hashPassword(String(payload.password).trim())
-                  : (
-                      await query('SELECT password FROM admin_staff WHERE id = $1', [Number(id)])
-                    ).rows[0]?.password ?? ''
-            }
-          : payload;
+      let nextPayload = payload;
+      if (entity === 'staff') {
+        const currentStaff = (
+          await query('SELECT password, last_login FROM admin_staff WHERE id = $1', [Number(id)])
+        ).rows[0];
+        const phone = String(payload.phone ?? '').trim();
+        if (!isMainlandMobile(phone)) {
+          throw new Error('请填写 11 位员工手机号，员工将使用该手机号 + 短信验证码登录');
+        }
+        nextPayload = {
+          ...payload,
+          phone,
+          department: await inferStaffDepartmentByRoleId(payload.role_id),
+          password:
+            payload.password && String(payload.password).trim().length > 0
+              ? await hashPassword(String(payload.password).trim())
+              : currentStaff?.password ?? '',
+          last_login: currentStaff?.last_login ?? '从未登录'
+        };
+      }
       const values = config.normalize(nextPayload);
       await query(
         `UPDATE ${config.table} SET ${config.updateSet} WHERE id = $${values.length + 2}`,
