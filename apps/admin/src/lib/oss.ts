@@ -17,10 +17,24 @@ export function getOssConfig() {
   };
 }
 
-export function buildPublicOssUrl(key: string): string {
+export function buildPublicOssUrl(
+  key: string,
+  options: { filename?: string; contentType?: string } = {}
+): string {
   const baseUrl = getOssConfig().baseUrl.replace(/\/+$/, '');
   const normalizedKey = String(key || '').replace(/^\/+/, '');
-  return baseUrl && normalizedKey ? `${baseUrl}/${normalizedKey}` : '';
+  if (!baseUrl || !normalizedKey) return '';
+  const url = new URL(`${baseUrl}/${normalizedKey}`);
+  if (options.filename) {
+    url.searchParams.set(
+      'response-content-disposition',
+      `attachment; filename="${options.filename.replace(/"/g, '')}"`
+    );
+  }
+  if (options.contentType) {
+    url.searchParams.set('response-content-type', options.contentType);
+  }
+  return url.toString();
 }
 
 export function isOssEnabled() {

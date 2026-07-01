@@ -15,7 +15,10 @@ function formatSize(bytes: number) {
 export default async function DownloadPage() {
   const release = await getLatestAppRelease('android');
   // CDN/OSS 直链优先；未配置公开加速域名时退回应用域名代理。
-  const publicUrl = release ? buildPublicOssUrl(release.fileKey) : '';
+  const publicUrl = release ? buildPublicOssUrl(release.fileKey, {
+    filename: release.fileName || `miliguan-${release.version || 'app'}.apk`,
+    contentType: 'application/vnd.android.package-archive'
+  }) : '';
   const downloadUrl = release ? publicUrl || (isOssEnabled() ? '/api/public/app-release/download?platform=android' : '') : '';
 
   return (

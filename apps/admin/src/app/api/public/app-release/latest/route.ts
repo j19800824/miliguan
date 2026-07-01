@@ -13,7 +13,10 @@ export async function GET(request: Request) {
   }
 
   // CDN/OSS 直链优先；未配置公开加速域名时退回应用域名代理。
-  const publicUrl = buildPublicOssUrl(release.fileKey);
+  const publicUrl = buildPublicOssUrl(release.fileKey, {
+    filename: release.fileName || `miliguan-${release.version || 'app'}.apk`,
+    contentType: 'application/vnd.android.package-archive'
+  });
   const downloadUrl = publicUrl || (isOssEnabled()
     ? `/api/public/app-release/download?platform=${platform}`
     : '');
