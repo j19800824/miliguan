@@ -42,18 +42,28 @@ type SignFn = (
   opts: { method: string; expires: number; 'Content-Type'?: string }
 ) => string;
 
+function forceHttpsSignedUrl(url: string) {
+  const parsed = new URL(url);
+  if (parsed.protocol === 'http:') {
+    parsed.protocol = 'https:';
+  }
+  return parsed.toString();
+}
+
 /** 生成浏览器直传用的签名 PUT URL（默认 10 分钟有效，APK 较大）。 */
 export function signPutUrl(key: string, contentType?: string, expires = 600): string {
   const client = createOssClient() as unknown as { signatureUrl: SignFn };
-  return client.signatureUrl(key, {
-    method: 'PUT',
-    expires,
-    'Content-Type': contentType || 'application/octet-stream'
-  });
+  return forceHttpsSignedUrl(
+    client.signatureUrl(key, {
+      method: 'PUT',
+      expires,
+      'Content-Type': contentType || 'application/octet-stream'
+    })
+  );
 }
 
 /** 生成签名下载 GET URL（默认 1 小时有效）。桶保持私有读，无需公共读。 */
 export function signGetUrl(key: string, expires = 3600): string {
   const client = createOssClient() as unknown as { signatureUrl: SignFn };
-  return client.signatureUrl(key, { method: 'GET', expires });
+  return forceHttpsSignedUrl(client.signatureUrl(key, { method: 'GET', expires }));
 }
