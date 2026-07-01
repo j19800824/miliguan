@@ -517,10 +517,10 @@ export function createPurchaseOrdersConfig(
   return {
     entity: 'purchase-orders',
     title: '订货单管理',
-    description: '处理总部供货到分公司的订货额下单、审核和入库流转。',
+    description: '统一查看分公司向总公司订货、门店向分公司订货的审核和入库流转。',
     viewPermission: 'purchase-orders:view',
     writePermission: 'purchase-orders:edit',
-    searchPlaceholder: '搜索订货单号或分公司',
+    searchPlaceholder: '搜索订货单号、分公司或门店',
     filterLabel: '订货单状态',
     filterKey: 'status',
     filterOptions: [
@@ -534,7 +534,9 @@ export function createPurchaseOrdersConfig(
     ],
     columns: [
       { key: 'order_no', title: '订货单号', type: 'code' },
-      { key: 'company_name', title: '分公司' },
+      { key: 'order_direction', title: '订货方向', type: 'badge' },
+      { key: 'order_from', title: '订货方' },
+      { key: 'order_to', title: '供货方' },
       { key: 'status', title: '状态', type: 'badge' },
       { key: 'approval_status', title: '审核状态', type: 'badge' },
       { key: 'order_quota_total', title: '订货额消耗', type: 'currency' },

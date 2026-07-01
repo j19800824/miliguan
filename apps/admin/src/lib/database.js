@@ -2574,6 +2574,65 @@ export async function listInventory({ search = '', status = 'all', page = 1, pag
   });
 }
 
+export async function listStoreInventoryRecords({ search = '', page = 1, pageSize = 10, user = {} } = {}) {
+  await ensureStoreInventoryTables();
+  const params = [];
+  const where = [];
+  if (search) {
+    const keyword = `%${search}%`;
+    params.push(keyword, keyword, keyword, keyword);
+    where.push(`(companies.name ILIKE $1 OR company_stores.name ILIKE $2 OR products.name ILIKE $3 OR product_skus.sku_code ILIKE $4)`);
+  }
+  if (!canAccessAllCompanies(user)) {
+    const scopedCompanyId = getUserCompanyId(user);
+    if (scopedCompanyId) {
+      params.push(scopedCompanyId);
+      where.push(`store_inventory.company_id = $${params.length}`);
+    } else {
+      where.push('1 = 0');
+    }
+  }
+  const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
+  return executePaginatedQuery({
+    sql: `
+      SELECT
+        store_inventory.id,
+        companies.name AS company_name,
+        company_stores.name AS store_name,
+        products.name AS product_name,
+        product_skus.sku_code,
+        product_skus.spec,
+        store_inventory.quantity,
+        store_inventory.safety_stock,
+        CASE
+          WHEN store_inventory.safety_stock > 0 AND store_inventory.quantity <= store_inventory.safety_stock THEN '低库存'
+          ELSE '正常'
+        END AS status
+      FROM store_inventory
+      INNER JOIN companies ON companies.id = store_inventory.company_id
+      INNER JOIN company_stores ON company_stores.id = store_inventory.store_id
+      INNER JOIN product_skus ON product_skus.id = store_inventory.sku_id
+      INNER JOIN products ON products.id = product_skus.product_id
+      ${whereClause}
+      ORDER BY store_inventory.updated_at DESC, store_inventory.id DESC
+    `,
+    params,
+    page,
+    pageSize,
+    mapRow: (row) => ({
+      id: String(row.id),
+      company_name: row.company_name,
+      store_name: row.store_name,
+      product_name: row.product_name,
+      sku_code: row.sku_code,
+      spec: row.spec,
+      quantity: toNumber(row.quantity),
+      safety_stock: toNumber(row.safety_stock),
+      status: row.status
+    })
+  });
+}
+
 export async function listPurchaseOrders({ search = '', status = 'all', page = 1, pageSize = 10, user = {} } = {}) {
   await initializeDatabase();
   const deleteFilter = buildDeleteStatusFilter(status, 'purchase_orders.delete_status');
@@ -2583,6 +2642,19 @@ export async function listPurchaseOrders({ search = '', status = 'all', page = 1
         purchase_orders.id,
         purchase_orders.order_no,
         companies.name AS company_name,
+        company_stores.name AS store_name,
+        CASE
+          WHEN purchase_orders.store_id IS NULL THEN '分公司向总公司订货'
+          ELSE '门店向分公司订货'
+        END AS order_direction,
+        CASE
+          WHEN purchase_orders.store_id IS NULL THEN companies.name
+          ELSE company_stores.name
+        END AS order_from,
+        CASE
+          WHEN purchase_orders.store_id IS NULL THEN '总公司'
+          ELSE companies.name
+        END AS order_to,
         purchase_orders.status,
         purchase_orders.approval_status,
         purchase_orders.order_quota_total,
@@ -2590,15 +2662,15 @@ export async function listPurchaseOrders({ search = '', status = 'all', page = 1
         purchase_orders.created_at
       FROM purchase_orders
       INNER JOIN companies ON companies.id = purchase_orders.company_id
+      LEFT JOIN company_stores ON company_stores.id = purchase_orders.store_id
     `,
-    searchColumns: ['purchase_orders.order_no', 'companies.name'],
+    searchColumns: ['purchase_orders.order_no', 'companies.name', 'company_stores.name'],
     search,
     filterColumn: 'purchase_orders.status',
     filterValue: ['__deleted__', '__with_deleted__'].includes(status) ? 'all' : status,
     orderBy: 'purchase_orders.updated_at DESC, purchase_orders.id DESC'
   });
   let sql = queryData.sql;
-  sql = sql.replace('ORDER BY purchase_orders.updated_at DESC, purchase_orders.id DESC', `${sql.includes(' WHERE ') ? ' AND ' : ' WHERE '}purchase_orders.store_id IS NULL ORDER BY purchase_orders.updated_at DESC, purchase_orders.id DESC`);
   sql = appendCompanyDataScope(sql, queryData.params, user, 'purchase_orders.company_id');
   if (deleteFilter.applies) {
     sql = sql.replace('ORDER BY purchase_orders.updated_at DESC, purchase_orders.id DESC', `${sql.includes(' WHERE ') ? ' AND ' : ' WHERE '}${deleteFilter.condition} ORDER BY purchase_orders.updated_at DESC, purchase_orders.id DESC`);
@@ -2612,6 +2684,10 @@ export async function listPurchaseOrders({ search = '', status = 'all', page = 1
       id: String(row.id),
       order_no: row.order_no,
       company_name: row.company_name,
+      store_name: row.store_name ?? '',
+      order_direction: row.order_direction,
+      order_from: row.order_from ?? '-',
+      order_to: row.order_to ?? '-',
       status: row.status,
       approval_status: row.approval_status,
       order_quota_total: toNumber(row.order_quota_total),
@@ -4139,10 +4215,11 @@ export async function getCompanyStats(user = {}) {
 }
 
 export async function getInventoryStats(user = {}) {
-  await initializeDatabase();
+  await ensureStoreInventoryTables();
   const scope = canAccessAllCompanies(user) ? { clause: '', values: [] } : { clause: ' AND company_id = $1', values: [getUserCompanyId(user) ?? -1] };
   return {
     total: await getCount(`SELECT COUNT(*)::int AS count FROM company_inventory WHERE delete_status = '正常'${scope.clause}`, scope.values),
+    storeTotal: await getCount(`SELECT COUNT(*)::int AS count FROM store_inventory WHERE 1 = 1${scope.clause}`, scope.values),
     warning: await getCount(`SELECT COUNT(*)::int AS count FROM company_inventory WHERE quantity <= safety_stock AND delete_status = '正常'${scope.clause}`, scope.values),
     low: await getCount(`SELECT COUNT(*)::int AS count FROM company_inventory WHERE status = '低库存' AND delete_status = '正常'${scope.clause}`, scope.values)
   };
@@ -4152,9 +4229,9 @@ export async function getPurchaseOrderStats(user = {}) {
   await initializeDatabase();
   const scope = canAccessAllCompanies(user) ? { clause: '', values: [] } : { clause: ' AND company_id = $1', values: [getUserCompanyId(user) ?? -1] };
   return {
-    total: await getCount(`SELECT COUNT(*)::int AS count FROM purchase_orders WHERE delete_status = '正常' AND store_id IS NULL${scope.clause}`, scope.values),
-    pending: await getCount(`SELECT COUNT(*)::int AS count FROM purchase_orders WHERE approval_status = '待审核' AND delete_status = '正常' AND store_id IS NULL${scope.clause}`, scope.values),
-    received: await getCount(`SELECT COUNT(*)::int AS count FROM purchase_orders WHERE stock_received = TRUE AND delete_status = '正常' AND store_id IS NULL${scope.clause}`, scope.values)
+    total: await getCount(`SELECT COUNT(*)::int AS count FROM purchase_orders WHERE delete_status = '正常'${scope.clause}`, scope.values),
+    pending: await getCount(`SELECT COUNT(*)::int AS count FROM purchase_orders WHERE approval_status = '待审核' AND delete_status = '正常'${scope.clause}`, scope.values),
+    received: await getCount(`SELECT COUNT(*)::int AS count FROM purchase_orders WHERE stock_received = TRUE AND delete_status = '正常'${scope.clause}`, scope.values)
   };
 }
 

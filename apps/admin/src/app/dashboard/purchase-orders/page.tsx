@@ -29,8 +29,8 @@ export default async function PurchaseOrdersPage({
   const result = await listPurchaseOrders({ search, status, page, pageSize, user });
   const stats = await getPurchaseOrderStats(user);
   const metrics = [
-    { label: '订货单总数', value: `${stats.total}`, hint: '总公司供货到分公司的订货单总数' },
-    { label: '待审核', value: `${stats.pending}`, hint: '分公司订货额不足或异常的待审核订货单' },
+    { label: '订货单总数', value: `${stats.total}`, hint: '包含分公司向总公司、门店向分公司的订货单' },
+    { label: '待审核', value: `${stats.pending}`, hint: '订货额不足或异常的待审核订货单' },
     { label: '已入库', value: `${stats.received}`, hint: '已完成入库并进入库存的订货单数量' }
   ];
 

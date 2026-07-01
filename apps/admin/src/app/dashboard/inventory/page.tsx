@@ -12,7 +12,8 @@ import {
   listInventory,
   listInventoryAdjustments,
   listInventoryLogs,
-  listLowInventoryRecords
+  listLowInventoryRecords,
+  listStoreInventoryRecords
 } from '@/lib/database.js';
 
 export const metadata = {
@@ -28,12 +29,15 @@ export default async function InventoryPage({
   const params = await searchParams;
   const pageSize = Number(Array.isArray(params.pageSize) ? params.pageSize[0] : params.pageSize ?? '10');
   const inventoryPage = Number(Array.isArray(params.inventoryPage) ? params.inventoryPage[0] : params.inventoryPage ?? '1');
+  const storeInventoryPage = Number(Array.isArray(params.storeInventoryPage) ? params.storeInventoryPage[0] : params.storeInventoryPage ?? '1');
   const adjustmentsPage = Number(Array.isArray(params.adjustmentsPage) ? params.adjustmentsPage[0] : params.adjustmentsPage ?? '1');
   const logsPage = Number(Array.isArray(params.logsPage) ? params.logsPage[0] : params.logsPage ?? '1');
   const warningsPage = Number(Array.isArray(params.warningsPage) ? params.warningsPage[0] : params.warningsPage ?? '1');
   const stats = await getInventoryStats(user);
   const inventoryResult = await listInventory({ page: inventoryPage, pageSize, user });
   const inventoryRows = inventoryResult.rows;
+  const storeInventoryResult = await listStoreInventoryRecords({ page: storeInventoryPage, pageSize, user });
+  const storeInventoryRows = storeInventoryResult.rows;
   const adjustmentResult = await listInventoryAdjustments({ page: adjustmentsPage, pageSize, user });
   const adjustmentRows = adjustmentResult.rows;
   const logsResult = await listInventoryLogs({ page: logsPage, pageSize, user });
@@ -57,15 +61,15 @@ export default async function InventoryPage({
     >
       <div className='space-y-4'>
         <div className='grid gap-4 md:grid-cols-3'>
-          <Card><CardHeader><CardDescription>库存记录</CardDescription><CardTitle>{stats.total}</CardTitle></CardHeader><CardContent className='text-sm text-muted-foreground'>分公司维度库存总记录数</CardContent></Card>
+          <Card><CardHeader><CardDescription>分公司库存</CardDescription><CardTitle>{stats.total}</CardTitle></CardHeader><CardContent className='text-sm text-muted-foreground'>分公司维度库存总记录数</CardContent></Card>
+          <Card><CardHeader><CardDescription>门店库存</CardDescription><CardTitle>{stats.storeTotal}</CardTitle></CardHeader><CardContent className='text-sm text-muted-foreground'>门店维度库存总记录数</CardContent></Card>
           <Card><CardHeader><CardDescription>预警记录</CardDescription><CardTitle>{stats.warning}</CardTitle></CardHeader><CardContent className='text-sm text-muted-foreground'>低于安全库存的记录数</CardContent></Card>
-          <Card><CardHeader><CardDescription>低库存</CardDescription><CardTitle>{stats.low}</CardTitle></CardHeader><CardContent className='text-sm text-muted-foreground'>需要尽快补货的 SKU 数量</CardContent></Card>
         </div>
 
         <Card>
           <CardHeader>
-            <CardTitle>库存总览</CardTitle>
-            <CardDescription>一期库存只统计分公司维度，不做门店精细库存。</CardDescription>
+            <CardTitle>分公司库存</CardTitle>
+            <CardDescription>分公司向总公司订货入库后的库存总览。</CardDescription>
           </CardHeader>
           <CardContent>
             <ClientPaginatedTable
@@ -78,6 +82,35 @@ export default async function InventoryPage({
               rows={inventoryRows.map((row: (typeof inventoryRows)[number], index: number) => (
                 <TableRow key={`${row.id}-${row.company_name}-${index}`}>
                   <TableCell>{row.company_name}</TableCell>
+                  <TableCell>{row.product_name}</TableCell>
+                  <TableCell>{row.sku_code}</TableCell>
+                  <TableCell>{row.spec}</TableCell>
+                  <TableCell>{row.quantity}</TableCell>
+                  <TableCell>{row.safety_stock}</TableCell>
+                  <TableCell><StatusBadge status={row.status} /></TableCell>
+                </TableRow>
+              ))}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>门店库存</CardTitle>
+            <CardDescription>门店向分公司订货入库后的库存明细，门店扫码核销会扣减这里。</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ClientPaginatedTable
+              headers={['分公司', '门店', '商品', 'SKU', '规格', '库存数', '安全库存', '状态']}
+              emptyMessage='暂无门店库存记录'
+              total={storeInventoryResult.total}
+              page={storeInventoryResult.page}
+              pageSize={storeInventoryResult.pageSize}
+              pageParamName='storeInventoryPage'
+              rows={storeInventoryRows.map((row: (typeof storeInventoryRows)[number], index: number) => (
+                <TableRow key={`${row.id}-${row.company_name}-${row.store_name}-${index}`}>
+                  <TableCell>{row.company_name}</TableCell>
+                  <TableCell>{row.store_name}</TableCell>
                   <TableCell>{row.product_name}</TableCell>
                   <TableCell>{row.sku_code}</TableCell>
                   <TableCell>{row.spec}</TableCell>
