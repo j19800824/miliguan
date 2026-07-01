@@ -59,11 +59,12 @@ interface MenuItem {
   color: string;
   badge?: string;
   route: string;
+  hideForBoss?: boolean;
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { IconComp: Clipboard, label: '核销订单',  sub: '查看付款核销订单',   color: Colors.primary,        route: 'MyOrders' },
-  { IconComp: Chart,     label: '积分明细',  sub: '积分获取与消费记录', color: Colors.gold,           route: 'PointsHistory' },
+  { IconComp: Clipboard, label: '核销订单',  sub: '查看付款核销订单',   color: Colors.primary,        route: 'MyOrders', hideForBoss: true },
+  { IconComp: Chart,     label: '积分明细',  sub: '积分获取与消费记录', color: Colors.gold,           route: 'PointsHistory', hideForBoss: true },
   { IconComp: Bell,      label: '消息通知',  sub: '系统通知与提醒',     color: Colors.info,           route: 'Notifications' },
   { IconComp: Settings,  label: '设置',      sub: '账号与应用设置',     color: Colors.textSecondary, route: 'Settings' },
   { IconComp: Help,      label: '帮助与反馈', sub: '使用帮助与意见反馈', color: Colors.warning,        route: 'Help' },
@@ -74,6 +75,7 @@ export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
   const navigation = useNavigation();
   const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const roleColor = ROLE_COLOR[user.role];
+  const visibleMenuItems = MENU_ITEMS.filter((item) => !(user.role === 'boss' && item.hideForBoss));
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
     (user as { avatarUrl?: string }).avatarUrl || null,
   );
@@ -142,7 +144,7 @@ export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
           <Text style={styles.org}>{user.org}</Text>
         </View>
 
-        {user.points != null && (
+        {user.role !== 'boss' && user.points != null && (
           <View style={styles.pointsWrap}>
             <Text style={styles.pointsValue}>{user.points.toLocaleString()}</Text>
             <Text style={styles.pointsLabel}>积分</Text>
@@ -152,10 +154,10 @@ export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
 
       {/* Menu */}
       <View style={styles.menuCard}>
-        {MENU_ITEMS.map((item, i) => (
+        {visibleMenuItems.map((item, i) => (
           <TouchableOpacity
             key={item.label}
-            style={[styles.menuRow, i < MENU_ITEMS.length - 1 && styles.menuRowBorder]}
+            style={[styles.menuRow, i < visibleMenuItems.length - 1 && styles.menuRowBorder]}
             activeOpacity={0.7}
             onPress={() => nav.navigate(item.route)}
           >

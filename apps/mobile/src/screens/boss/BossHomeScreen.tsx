@@ -86,14 +86,6 @@ export function BossHomeScreen({ user }: BossHomeScreenProps) {
           >
             <Bell size={20} color={Colors.primary} />
           </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.pointsBadge}
-            activeOpacity={0.85}
-            onPress={() => nav.navigate('PointsHistory')}
-          >
-            <Sparkle size={14} color={Colors.goldDark} />
-            <Text style={styles.pointsBadgeText}>积分</Text>
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -275,18 +267,6 @@ const styles = StyleSheet.create({
     borderColor: Colors.border,
     ...Shadow.card,
   },
-  pointsBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    height: 32,
-    borderRadius: Radius.full,
-    backgroundColor: Colors.bgWarm,
-    borderWidth: 1,
-    borderColor: Colors.gold,
-  },
-  pointsBadgeText: { fontSize: 12, fontWeight: '700', color: Colors.goldDark },
   kpiRow: { flexDirection: 'row', gap: Spacing.md },
   periodRow: {
     flexDirection: 'row',
