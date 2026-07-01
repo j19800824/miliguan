@@ -64,6 +64,16 @@ export async function fetchReplenishmentDetail(
   );
 }
 
+export async function receiveReplenishment(
+  id: string,
+): Promise<{ ok: boolean }> {
+  if (shouldUseMocks()) return { ok: true };
+  return getApiClient()<{ ok: boolean }>(
+    `/api/mobile/replenishments/${id}/receive`,
+    { method: 'PUT', body: JSON.stringify({ note: 'App 确认入库' }) },
+  );
+}
+
 export async function fetchPendingReplenishments(): Promise<PendingReplenishment[]> {
   if (shouldUseMocks()) return [];
   return getApiClient()<PendingReplenishment[]>(

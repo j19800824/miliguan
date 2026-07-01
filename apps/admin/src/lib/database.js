@@ -3885,6 +3885,7 @@ export async function listPurchaseOrdersByCompany(companyId, { page = 1, pageSiz
         SELECT
           purchase_orders.id,
           purchase_orders.order_no,
+          purchase_orders.store_id,
           purchase_orders.status,
           purchase_orders.order_quota_total,
           purchase_orders.approval_status,
@@ -7827,6 +7828,7 @@ export async function getPurchaseOrderDetail(id, { itemsPage = 1, approvalsPage 
   return {
     id: String(order.id),
     order_no: order.order_no,
+    store_id: order.store_id ? String(order.store_id) : '',
     company_name: order.company_name,
     company_code: order.company_code,
     store_name: order.store_name ?? '',
@@ -9821,7 +9823,7 @@ export async function getPointsHistoryForUser(user, { limit = 50 } = {}) {
   const rows = (
     await query(
       `
-        SELECT w.id, w.writeoff_time AS time, w.product_code,
+        SELECT w.id, w.writeoff_time AS time, mo.created_at AS order_created_at, w.product_code,
                w.sales_staff_name, w.remark, w.store_id,
                cs.name AS store_name,
                ps.sku_code, ps.redeem_points_price,
@@ -9840,7 +9842,7 @@ export async function getPointsHistoryForUser(user, { limit = 50 } = {}) {
   ).rows;
   return rows.map((r) => ({
     id: String(r.id),
-    time: r.time ?? '',
+    time: r.order_created_at instanceof Date ? r.order_created_at.toISOString() : (r.time ?? ''),
     direction: 'in',
     amount: Number(r.redeem_points_price ?? 0),
     productName: r.product_name ?? r.sku_code ?? '商品',

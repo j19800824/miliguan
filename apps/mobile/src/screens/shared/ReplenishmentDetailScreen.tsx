@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useRoute } from '@react-navigation/native';
@@ -17,6 +19,7 @@ import {
 } from '../../constants/theme';
 import {
   fetchReplenishmentDetail,
+  receiveReplenishment,
   type ReplenishmentDetail,
 } from '../../services/api';
 
@@ -37,6 +40,7 @@ export function ReplenishmentDetailScreen() {
   const { id } = (route.params ?? {}) as RouteParams;
   const [detail, setDetail] = useState<ReplenishmentDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [receiving, setReceiving] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -45,6 +49,26 @@ export function ReplenishmentDetailScreen() {
       .catch(() => setDetail(null))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const reload = async () => {
+    if (!id) return;
+    const next = await fetchReplenishmentDetail(id);
+    setDetail(next);
+  };
+
+  const handleReceive = async () => {
+    if (!id || receiving) return;
+    setReceiving(true);
+    try {
+      await receiveReplenishment(id);
+      await reload();
+      Alert.alert('入库完成', '库存已更新，可以在库存页查看。');
+    } catch (error) {
+      Alert.alert('入库失败', error instanceof Error ? error.message : '请稍后重试');
+    } finally {
+      setReceiving(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -63,6 +87,7 @@ export function ReplenishmentDetailScreen() {
   }
 
   const color = STATUS_COLOR[detail.status] ?? Colors.textSecondary;
+  const canReceive = detail.approvalStatus === '已通过' && !detail.stockReceived;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -89,6 +114,18 @@ export function ReplenishmentDetailScreen() {
         <InfoRow label="商品数量" value={`${detail.totalQty} 件`} />
         <InfoRow label="创建时间" value={detail.createdAt || '-'} />
         {detail.remark ? <InfoRow label="备注" value={detail.remark} /> : null}
+        {canReceive ? (
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.receiveBtn}
+            onPress={handleReceive}
+            disabled={receiving}
+          >
+            <Text style={styles.receiveBtnText}>
+              {receiving ? '入库中...' : '确认入库'}
+            </Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <View style={styles.section}>
@@ -181,6 +218,19 @@ const styles = StyleSheet.create({
     fontSize: FontSize.sm,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+  receiveBtn: {
+    marginTop: Spacing.md,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+    ...Shadow.card,
+  },
+  receiveBtnText: {
+    color: '#fff',
+    fontSize: FontSize.md,
+    fontWeight: '800',
   },
   item: {
     flexDirection: 'row',
