@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system/legacy';
+import { apiBaseUrl } from '../../config/env';
 import { getApiClient, shouldUseMocks } from './client';
 
 const CACHE_KEY = 'miliguan.startupSplash.v1';
@@ -22,15 +23,25 @@ export const DEFAULT_STARTUP_SPLASH: StartupSplashConfig = {
 
 function normalizeConfig(input: Partial<StartupSplashConfig>): StartupSplashConfig {
   const durationMs = Number(input.durationMs ?? DEFAULT_STARTUP_SPLASH.durationMs);
+  const imageUrl = normalizeImageUrl(String(input.imageUrl ?? ''));
   return {
     enabled: input.enabled !== false,
-    imageUrl: String(input.imageUrl ?? ''),
+    imageUrl,
     localImageUri: String(input.localImageUri ?? ''),
     version: String(input.version ?? DEFAULT_STARTUP_SPLASH.version),
     durationMs: Number.isFinite(durationMs)
       ? Math.max(0, Math.min(durationMs, 5000))
       : DEFAULT_STARTUP_SPLASH.durationMs,
   };
+}
+
+function normalizeImageUrl(imageUrl: string): string {
+  if (!imageUrl) return '';
+  if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+  if (imageUrl.startsWith('/') && apiBaseUrl) {
+    return `${apiBaseUrl.replace(/\/$/, '')}${imageUrl}`;
+  }
+  return imageUrl;
 }
 
 export async function loadCachedStartupSplash(): Promise<StartupSplashConfig> {
