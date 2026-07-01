@@ -6658,14 +6658,42 @@ export async function approvePurchaseOrder(id, payload = {}, actorName = '后台
     const items = (
       await query(
         `
-          SELECT sku_id, quantity
+          SELECT
+            purchase_order_items.sku_id,
+            purchase_order_items.quantity,
+            products.name AS product_name,
+            product_skus.sku_code,
+            product_skus.spec,
+            COALESCE(company_inventory.quantity, 0) AS company_quantity
           FROM purchase_order_items
-          WHERE purchase_order_id = $1
-          ORDER BY id ASC
+          INNER JOIN product_skus ON product_skus.id = purchase_order_items.sku_id
+          INNER JOIN products ON products.id = product_skus.product_id
+          LEFT JOIN company_inventory
+            ON company_inventory.company_id = $2
+           AND company_inventory.sku_id = purchase_order_items.sku_id
+           AND company_inventory.delete_status = '正常'
+          WHERE purchase_order_items.purchase_order_id = $1
+          ORDER BY purchase_order_items.id ASC
         `,
-        [Number(id)]
+        [Number(id), Number(order.company_id)]
       )
     ).rows;
+
+    if (order.store_id) {
+      const insufficientItems = items.filter(
+        (item) => toNumber(item.company_quantity) < toNumber(item.quantity)
+      );
+      if (insufficientItems.length > 0) {
+        const detail = insufficientItems
+          .map((item) => {
+            const name = `${item.product_name ?? '商品'} ${item.spec ?? item.sku_code ?? ''}`.trim();
+            return `${name} 当前 ${toNumber(item.company_quantity)}，需要 ${toNumber(item.quantity)}`;
+          })
+          .join('；');
+        throw new Error(`分公司库存不足：${detail}`);
+      }
+    }
+
     for (const item of items) {
       if (order.store_id) {
         await upsertInventory(
