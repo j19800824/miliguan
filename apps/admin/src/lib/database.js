@@ -70,7 +70,7 @@ function formatShanghaiDateTime(date = new Date()) {
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
 
-async function query(text, values = []) {
+export async function query(text, values = []) {
   return pool.query(text, values);
 }
 
@@ -3420,6 +3420,8 @@ function mapAdminUser(row, permissions) {
     email: row.email,
     account: row.account,
     department: row.department,
+    companyName: row.company_name ?? '',
+    storeName: row.store_name ?? '',
     roleId: String(row.role_id),
     roleName: row.role_name,
     roleScope: row.role_scope ?? '',
@@ -3452,11 +3454,15 @@ async function getStaffByAccount(account, password, loginScope = 'admin') {
         admin_staff.last_login,
         admin_staff.company_id,
         admin_staff.store_id,
+        companies.name AS company_name,
+        company_stores.name AS store_name,
         roles.id AS role_id,
         roles.role_name,
         roles.scope AS role_scope
       FROM admin_staff
       LEFT JOIN roles ON roles.id = admin_staff.role_id
+      LEFT JOIN companies ON companies.id = admin_staff.company_id
+      LEFT JOIN company_stores ON company_stores.id = admin_staff.store_id
       WHERE (admin_staff.account = $1 OR admin_staff.phone = $1)
         AND admin_staff.status != '停用'
         AND admin_staff.delete_status = '正常'
@@ -3522,11 +3528,15 @@ async function getStaffByPhone(phone, loginScope = 'admin') {
         admin_staff.last_login,
         admin_staff.company_id,
         admin_staff.store_id,
+        companies.name AS company_name,
+        company_stores.name AS store_name,
         roles.id AS role_id,
         roles.role_name,
         roles.scope AS role_scope
       FROM admin_staff
       LEFT JOIN roles ON roles.id = admin_staff.role_id
+      LEFT JOIN companies ON companies.id = admin_staff.company_id
+      LEFT JOIN company_stores ON company_stores.id = admin_staff.store_id
       WHERE admin_staff.phone = $1
         AND admin_staff.status != '停用'
         AND admin_staff.delete_status = '正常'
@@ -3566,11 +3576,15 @@ export async function getAdminById(id) {
         admin_staff.last_login,
         admin_staff.company_id,
         admin_staff.store_id,
+        companies.name AS company_name,
+        company_stores.name AS store_name,
         roles.id AS role_id,
         roles.role_name,
         roles.scope AS role_scope
       FROM admin_staff
       LEFT JOIN roles ON roles.id = admin_staff.role_id
+      LEFT JOIN companies ON companies.id = admin_staff.company_id
+      LEFT JOIN company_stores ON company_stores.id = admin_staff.store_id
       WHERE admin_staff.id = $1 AND admin_staff.status != '停用' AND admin_staff.delete_status = '正常'
     `,
     [Number(id)]
@@ -6160,7 +6174,7 @@ async function refundMemberOrder(id, note = '', createdBy = '后台用户') {
         FROM member_order_items
         WHERE member_order_id = $1
       `,
-      [Number(id)]
+      [Number(order.id)]
     )
   ).rows;
 

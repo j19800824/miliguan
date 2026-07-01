@@ -14,6 +14,7 @@ import { MyOrdersScreen } from '../screens/shared/MyOrdersScreen';
 import { SettingsScreen } from '../screens/shared/SettingsScreen';
 import { HelpScreen } from '../screens/shared/HelpScreen';
 import { ChangePasswordScreen } from '../screens/shared/ChangePasswordScreen';
+import { OrderDetailScreen } from '../screens/shared/OrderDetailScreen';
 import { PaymentScreen } from '../screens/shared/PaymentScreen';
 import type { MockUser } from '../data/mock';
 
@@ -140,7 +141,7 @@ export function SalesStaffNavigator({ user, onLogout }: NavProps) {
       <Stack.Screen
         name="MyOrders"
         component={MyOrdersScreen}
-        options={{ headerShown: true, title: '我的订单' }}
+        options={{ headerShown: true, title: '核销订单' }}
       />
       <Stack.Screen
         name="Settings"
@@ -156,6 +157,11 @@ export function SalesStaffNavigator({ user, onLogout }: NavProps) {
         name="ChangePassword"
         component={ChangePasswordScreen}
         options={{ headerShown: true, title: '修改密码' }}
+      />
+      <Stack.Screen
+        name="OrderDetail"
+        component={OrderDetailScreen}
+        options={{ headerShown: true, title: '订单详情' }}
       />
       <Stack.Screen
         name="Payment"

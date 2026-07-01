@@ -11,14 +11,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { SectionHeader } from '../../components/SectionHeader';
 import {
-  Check,
   Chart,
   Clipboard,
   Package,
   Sparkle,
   Trophy,
-  X,
 } from '../../components/Icons';
+import { VerifyOrderCard } from '../../components/VerifyOrderCard';
 import {
   Colors,
   FontSize,
@@ -193,34 +192,11 @@ export function StoreManagerHomeScreen({ user }: StoreManagerHomeScreenProps) {
         </View>
       ) : (
         recentRecords.map((r) => (
-          <View
+          <VerifyOrderCard
             key={r.id}
-            style={[styles.recordRow, r.status === 'fail' && styles.recordRowFail]}
-          >
-            <View
-              style={[
-                styles.recordStatus,
-                r.status === 'success' ? styles.statusSuccess : styles.statusFail,
-              ]}
-            >
-              {r.status === 'success' ? (
-                <Check size={16} color={Colors.success} />
-              ) : (
-                <X size={16} color={Colors.danger} />
-              )}
-            </View>
-            <View style={styles.recordInfo}>
-              <Text style={styles.recordProduct}>{r.product}</Text>
-              <Text style={styles.recordMeta}>
-                {r.time} · {r.staff}
-              </Text>
-            </View>
-            {r.status === 'success' ? (
-              <Text style={styles.recordPts}>+{r.pts}</Text>
-            ) : (
-              <Text style={styles.recordFail}>核销失败</Text>
-            )}
-          </View>
+            record={r}
+            onPress={() => nav.navigate('OrderDetail', { id: r.orderId })}
+          />
         ))
       )}
 

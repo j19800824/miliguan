@@ -1,7 +1,21 @@
-import { MOCK_VERIFY_RECORDS } from '../../data/mock';
 import { getApiClient, shouldUseMocks } from './client';
+import { MOCK_VERIFY_RECORDS } from '../../data/mock';
 
-export type VerifyRecord = (typeof MOCK_VERIFY_RECORDS)[number];
+export interface VerifyRecord {
+  id: string;
+  orderId: string;
+  orderNo: string;
+  product: string;
+  barcode: string;
+  time: string;
+  createdAt: string;
+  staff: string;
+  status: 'success' | 'fail';
+  pts: number;
+  amount: number;
+  itemCount: number;
+  storeName: string;
+}
 
 export interface VerifyScanRequest {
   barcode: string;

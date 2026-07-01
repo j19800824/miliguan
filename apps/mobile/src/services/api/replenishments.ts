@@ -9,6 +9,33 @@ export interface ReplenishmentRow {
   createdAt: string;
 }
 
+export interface ReplenishmentItem {
+  id: string;
+  productName: string;
+  skuCode: string;
+  spec: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+}
+
+export interface ReplenishmentDetail {
+  id: string;
+  orderNo: string;
+  status: string;
+  approvalStatus: string;
+  companyName: string;
+  storeName: string;
+  totalAmount: number;
+  totalQty: number;
+  remark: string;
+  stockReceived: boolean;
+  quotaDeducted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  items: ReplenishmentItem[];
+}
+
 export interface PendingReplenishment {
   id: string;
   orderNo: string;
@@ -27,6 +54,14 @@ export interface CreateReplenishmentItem {
 export async function fetchReplenishments(): Promise<ReplenishmentRow[]> {
   if (shouldUseMocks()) return [];
   return getApiClient()<ReplenishmentRow[]>('/api/mobile/replenishments');
+}
+
+export async function fetchReplenishmentDetail(
+  id: string,
+): Promise<ReplenishmentDetail> {
+  return getApiClient()<ReplenishmentDetail>(
+    `/api/mobile/replenishments/${id}`,
+  );
 }
 
 export async function fetchPendingReplenishments(): Promise<PendingReplenishment[]> {

@@ -62,7 +62,7 @@ interface MenuItem {
 }
 
 const MENU_ITEMS: MenuItem[] = [
-  { IconComp: Clipboard, label: '我的订单',  sub: '查看积分订单记录',   color: Colors.primary,        route: 'MyOrders' },
+  { IconComp: Clipboard, label: '核销订单',  sub: '查看付款核销订单',   color: Colors.primary,        route: 'MyOrders' },
   { IconComp: Chart,     label: '积分明细',  sub: '积分获取与消费记录', color: Colors.gold,           route: 'PointsHistory' },
   { IconComp: Bell,      label: '消息通知',  sub: '系统通知与提醒',     color: Colors.info,           route: 'Notifications' },
   { IconComp: Settings,  label: '设置',      sub: '账号与应用设置',     color: Colors.textSecondary, route: 'Settings' },

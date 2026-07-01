@@ -16,6 +16,7 @@ import {
   numericFont,
 } from '../../constants/theme';
 import { fetchOrderDetail, type OrderDetail } from '../../services/api';
+import { formatDateTime } from '../../utils/format';
 
 interface RouteParams {
   id: string;
@@ -80,9 +81,7 @@ export function OrderDetailScreen() {
         <Row label="门店" value={order.storeName || order.companyName} />
         <Row
           label="下单时间"
-          value={new Date(order.createdAt).toLocaleString('zh-CN', {
-            hour12: false,
-          })}
+          value={formatDateTime(order.createdAt)}
         />
       </View>
 

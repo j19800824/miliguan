@@ -4,9 +4,11 @@ import {
   RefreshControl,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import {
   Colors,
   FontSize,
@@ -20,6 +22,7 @@ import {
   type ReplenishmentRow,
 } from '../../services/api';
 import { onRealtime } from '../../services/realtime';
+import { formatDateTime } from '../../utils/format';
 
 const STATUS_COLOR: Record<string, string> = {
   待审核: Colors.warning,
@@ -30,6 +33,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 export function MyReplenishmentsScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const [list, setList] = useState<ReplenishmentRow[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -68,7 +73,11 @@ export function MyReplenishmentsScreen() {
         renderItem={({ item }) => {
           const color = STATUS_COLOR[item.status] ?? Colors.textSecondary;
           return (
-            <View style={styles.row}>
+            <TouchableOpacity
+              style={styles.row}
+              activeOpacity={0.85}
+              onPress={() => nav.navigate('ReplenishmentDetail', { id: item.id })}
+            >
               <View style={styles.header}>
                 <Text style={styles.orderNo}>{item.orderNo}</Text>
                 <View style={[styles.badge, { backgroundColor: `${color}20` }]}>
@@ -82,9 +91,9 @@ export function MyReplenishmentsScreen() {
                 </Text>
               </View>
               <Text style={styles.date}>
-                {new Date(item.createdAt).toLocaleString('zh-CN', { hour12: false })}
+                {formatDateTime(item.createdAt)}
               </Text>
-            </View>
+            </TouchableOpacity>
           );
         }}
         ListEmptyComponent={<Text style={styles.empty}>暂无进货单</Text>}

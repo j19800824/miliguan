@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import {
   Colors,
   FontSize,
@@ -70,6 +71,8 @@ function adaptCompanyRow(item: InventoryItem, idx: number): InventoryRow {
 
 export function InventoryScreen({ user }: Props) {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const isStore = Boolean(user.storeId);
 
   const [rows, setRows] = useState<InventoryRow[]>([]);
@@ -130,7 +133,8 @@ export function InventoryScreen({ user }: Props) {
     }
   };
 
-  const lowCount = rows.filter((r) => r.warn).length;
+  const outOfStockCount = rows.filter((r) => r.quantity === 0).length;
+  const lowCount = rows.filter((r) => r.warn && r.quantity > 0).length;
   const pendingCount = myReplenishments.filter(
     (r) => r.status === '待审核',
   ).length;
@@ -161,6 +165,9 @@ export function InventoryScreen({ user }: Props) {
             {lowCount}
           </Text>
           <Text style={styles.statLabel}>低库存</Text>
+          <Text style={styles.statHint}>
+            {outOfStockCount > 0 ? `${outOfStockCount} 个缺货` : '按预警库存判断'}
+          </Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{pendingCount}</Text>
@@ -172,7 +179,12 @@ export function InventoryScreen({ user }: Props) {
         <View style={styles.pendingSection}>
           <Text style={styles.sectionTitle}>待审核 · 门店补货请求</Text>
           {pendingFromStores.map((p) => (
-            <View key={p.id} style={styles.pendingCard}>
+            <TouchableOpacity
+              key={p.id}
+              style={styles.pendingCard}
+              activeOpacity={0.85}
+              onPress={() => nav.navigate('ReplenishmentDetail', { id: p.id })}
+            >
               <View style={{ flex: 1 }}>
                 <Text style={styles.pendingStore}>{p.storeName}</Text>
                 <Text style={styles.pendingMeta}>
@@ -181,19 +193,25 @@ export function InventoryScreen({ user }: Props) {
               </View>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionApprove]}
-                onPress={() => handleApprove(p, '通过')}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void handleApprove(p, '通过');
+                }}
                 testID={`approve-${p.id}`}
               >
                 <Text style={styles.actionApproveText}>通过</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionReject]}
-                onPress={() => handleApprove(p, '驳回')}
+                onPress={(event) => {
+                  event.stopPropagation();
+                  void handleApprove(p, '驳回');
+                }}
                 testID={`reject-${p.id}`}
               >
                 <Text style={styles.actionRejectText}>驳回</Text>
               </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
           ))}
         </View>
       )}
@@ -227,12 +245,17 @@ export function InventoryScreen({ user }: Props) {
               {item.spec ? (
                 <Text style={styles.invSpec}>{item.spec}</Text>
               ) : null}
-              {item.warn && (
+              {item.quantity === 0 ? (
                 <View style={styles.warnTag}>
                   <AlertDot size={10} color={Colors.danger} />
-                  <Text style={styles.warnTagText}>低于安全库存</Text>
+                  <Text style={styles.warnTagText}>缺货</Text>
                 </View>
-              )}
+              ) : item.warn ? (
+                <View style={styles.warnTag}>
+                  <AlertDot size={10} color={Colors.danger} />
+                  <Text style={styles.warnTagText}>低于预警库存</Text>
+                </View>
+              ) : null}
             </View>
             <Text style={[styles.invQty, item.warn && styles.invQtyWarn]}>
               {item.quantity} <Text style={styles.invUnit}>{item.unit}</Text>
@@ -308,6 +331,12 @@ const styles = StyleSheet.create({
     fontSize: FontSize.xs,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  statHint: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    marginTop: 2,
+    textAlign: 'center',
   },
   pendingSection: {
     paddingHorizontal: Spacing.lg,

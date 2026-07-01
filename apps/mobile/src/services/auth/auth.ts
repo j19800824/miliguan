@@ -9,6 +9,8 @@ import type { MockUser, Role } from '../../data/mock';
 export type AuthUser = MockUser & {
   account?: string;
   roleName?: string;
+  companyName?: string;
+  storeName?: string;
   companyId?: string;
   storeId?: string;
   permissions?: string[];
@@ -21,6 +23,8 @@ interface SignInResponse {
     roleScope?: string;
     department?: string;
     fullName?: string;
+    companyName?: string;
+    storeName?: string;
   };
 }
 
@@ -39,15 +43,25 @@ function adaptUser(raw: SignInResponse['user']): AuthUser {
     name: raw.fullName ?? raw.name ?? raw.account ?? '账号',
     role,
     roleLabel: raw.roleName ?? roleLabel(role),
-    org: raw.department ?? '',
+    org: resolveOrgLabel(raw, role),
     avatar: roleAvatar(role),
     points: undefined,
     account: raw.account,
     roleName: raw.roleName,
+    companyName: raw.companyName,
+    storeName: raw.storeName,
     companyId: raw.companyId,
     storeId: raw.storeId,
     permissions: raw.permissions,
   };
+}
+
+function resolveOrgLabel(raw: SignInResponse['user'], role: Role): string {
+  if (raw.storeName && raw.companyName) return `${raw.storeName} / ${raw.companyName}`;
+  if (raw.storeName) return raw.storeName;
+  if (raw.companyName) return `${raw.companyName} / 分公司`;
+  if (role === 'boss') return '米粒冠总部';
+  return raw.department ?? '';
 }
 
 /**

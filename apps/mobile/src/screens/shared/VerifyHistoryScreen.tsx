@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 import {
   Colors,
   FontSize,
@@ -15,7 +16,7 @@ import {
   Spacing,
   numericFont,
 } from '../../constants/theme';
-import { Check, X } from '../../components/Icons';
+import { VerifyOrderCard } from '../../components/VerifyOrderCard';
 import {
   fetchVerifyRecords,
   type VerifyRecord,
@@ -23,6 +24,8 @@ import {
 
 export function VerifyHistoryScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const [records, setRecords] = useState<VerifyRecord[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -72,31 +75,10 @@ export function VerifyHistoryScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         renderItem={({ item }) => (
-          <View style={[styles.row, item.status !== 'success' && styles.rowFail]}>
-            <View
-              style={[
-                styles.statusIcon,
-                item.status === 'success' ? styles.iconSuccess : styles.iconFail,
-              ]}
-            >
-              {item.status === 'success' ? (
-                <Check size={16} color={Colors.success} />
-              ) : (
-                <X size={16} color={Colors.danger} />
-              )}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.product}>{item.product}</Text>
-              <Text style={styles.meta}>
-                {item.time} · {item.staff} · {item.barcode}
-              </Text>
-            </View>
-            {item.status === 'success' ? (
-              <Text style={styles.pts}>+{item.pts}</Text>
-            ) : (
-              <Text style={styles.failLabel}>失败</Text>
-            )}
-          </View>
+          <VerifyOrderCard
+            record={item}
+            onPress={() => nav.navigate('OrderDetail', { id: item.orderId })}
+          />
         )}
         ListEmptyComponent={<Text style={styles.empty}>暂无核销记录</Text>}
       />
@@ -126,31 +108,5 @@ const styles = StyleSheet.create({
   statValue: { fontSize: FontSize.xxl, fontWeight: '800', ...numericFont },
   statLabel: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   list: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xl },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    marginBottom: Spacing.sm,
-    gap: Spacing.md,
-    ...Shadow.card,
-  },
-  rowFail: { borderLeftWidth: 3, borderLeftColor: Colors.danger },
-  statusIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  iconSuccess: { backgroundColor: Colors.successBg },
-  iconFail: { backgroundColor: Colors.dangerBg },
-  product: { fontSize: FontSize.md, fontWeight: '600', color: Colors.textPrimary },
-  meta: { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 2 },
-  pts: { fontSize: FontSize.md, fontWeight: '700', color: Colors.gold, ...numericFont },
-  failLabel: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.danger },
   empty: { textAlign: 'center', padding: Spacing.xxl, color: Colors.textMuted },
 });

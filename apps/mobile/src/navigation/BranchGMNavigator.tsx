@@ -11,6 +11,7 @@ import { PointsHistoryScreen } from '../screens/shared/PointsHistoryScreen';
 import { VerifyHistoryScreen } from '../screens/shared/VerifyHistoryScreen';
 import { NotificationsScreen } from '../screens/shared/NotificationsScreen';
 import { MyReplenishmentsScreen } from '../screens/shared/MyReplenishmentsScreen';
+import { ReplenishmentDetailScreen } from '../screens/shared/ReplenishmentDetailScreen';
 import { StoresScreen } from '../screens/shared/StoresScreen';
 import { StoreDetailScreen } from '../screens/shared/StoreDetailScreen';
 import { MyOrdersScreen } from '../screens/shared/MyOrdersScreen';
@@ -129,6 +130,11 @@ export function BranchGMNavigator({ user, onLogout }: NavProps) {
         options={{ headerShown: true, title: '我的进货单' }}
       />
       <Stack.Screen
+        name="ReplenishmentDetail"
+        component={ReplenishmentDetailScreen}
+        options={{ headerShown: true, title: '进货单详情' }}
+      />
+      <Stack.Screen
         name="Stores"
         component={StoresScreen}
         options={{ headerShown: true, title: '门店管理' }}
@@ -141,7 +147,7 @@ export function BranchGMNavigator({ user, onLogout }: NavProps) {
       <Stack.Screen
         name="MyOrders"
         component={MyOrdersScreen}
-        options={{ headerShown: true, title: '我的订单' }}
+        options={{ headerShown: true, title: '核销订单' }}
       />
       <Stack.Screen
         name="Settings"

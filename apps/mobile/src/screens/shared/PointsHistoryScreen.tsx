@@ -20,6 +20,7 @@ import {
   fetchPointsHistory,
   type PointsHistoryEntry,
 } from '../../services/api';
+import { formatDateTime } from '../../utils/format';
 
 export function PointsHistoryScreen() {
   const insets = useSafeAreaInsets();
@@ -68,10 +69,10 @@ export function PointsHistoryScreen() {
           <View style={styles.row}>
             <View style={{ flex: 1 }}>
               <Text style={styles.product}>{item.productName}</Text>
+              <Text style={styles.meta}>时间：{formatDateTime(item.time)}</Text>
+              <Text style={styles.meta}>类型：{item.source || (item.direction === 'in' ? '增加' : '减少')}</Text>
               <Text style={styles.meta}>
-                {item.time} · {item.source}
-                {item.storeName ? ` · ${item.storeName}` : ''}
-                {item.operator ? ` · ${item.operator}` : ''}
+                门店/用户：{[item.storeName, item.operator].filter(Boolean).join(' · ') || '-'}
               </Text>
             </View>
             <Text

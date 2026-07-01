@@ -112,7 +112,7 @@ export function BossNavigator({ user, onLogout }: NavProps) {
       <Stack.Screen
         name="MyOrders"
         component={MyOrdersScreen}
-        options={{ headerShown: true, title: '我的订单' }}
+        options={{ headerShown: true, title: '核销订单' }}
       />
       <Stack.Screen
         name="Settings"

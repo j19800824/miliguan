@@ -10,7 +10,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { SectionHeader } from '../../components/SectionHeader';
-import { Sparkle, Trophy, User, Check, X } from '../../components/Icons';
+import { Sparkle, Trophy, User, Check } from '../../components/Icons';
+import { VerifyOrderCard } from '../../components/VerifyOrderCard';
 import {
   Colors,
   FontSize,
@@ -194,32 +195,11 @@ export function SalesStaffHomeScreen({ user }: SalesStaffHomeScreenProps) {
         </View>
       ) : (
         myRecords.map((r) => (
-          <View
+          <VerifyOrderCard
             key={r.id}
-            style={[styles.recordRow, r.status === 'fail' && styles.recordFail]}
-          >
-            <View
-              style={[
-                styles.statusBubble,
-                r.status === 'success' ? styles.bubbleSuccess : styles.bubbleFail,
-              ]}
-            >
-              {r.status === 'success' ? (
-                <Check size={14} color={Colors.success} />
-              ) : (
-                <X size={14} color={Colors.danger} />
-              )}
-            </View>
-            <View style={styles.recordInfo}>
-              <Text style={styles.recordName}>{r.product}</Text>
-              <Text style={styles.recordTime}>{r.time}</Text>
-            </View>
-            {r.status === 'success' ? (
-              <Text style={styles.recordPts}>+{r.pts}</Text>
-            ) : (
-              <Text style={styles.recordStatusErr}>核销失败</Text>
-            )}
-          </View>
+            record={r}
+            onPress={() => nav.navigate('OrderDetail', { id: r.orderId })}
+          />
         ))
       )}
     </ScrollView>

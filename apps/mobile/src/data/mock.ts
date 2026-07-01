@@ -50,11 +50,25 @@ export const MOCK_ORDERS = [
   { id: 'ORD20240320004', sku: '低GI免煮米 100g', qty: 500, points: 6000, status: '已完成', date: '03-20' },
 ];
 
-export const MOCK_VERIFY_RECORDS = [
-  { id: 'V001', product: '低GI免煮米 2kg', barcode: '6901234567890', time: '14:32', staff: '陈小丽', status: 'success', pts: 20 },
-  { id: 'V002', product: '低GI免煮米 100g', barcode: '6901234567891', time: '13:15', staff: '王店长', status: 'success', pts: 20 },
-  { id: 'V003', product: '低GI免煮米 2.5kg', barcode: '6901234567892', time: '11:48', staff: '陈小丽', status: 'success', pts: 20 },
-  { id: 'V004', product: '未知商品', barcode: '0000000000000', time: '10:22', staff: '王店长', status: 'fail', pts: 0 },
+export const MOCK_VERIFY_RECORDS: Array<{
+  id: string;
+  orderId: string;
+  orderNo: string;
+  product: string;
+  barcode: string;
+  time: string;
+  createdAt: string;
+  staff: string;
+  status: 'success' | 'fail';
+  pts: number;
+  amount: number;
+  itemCount: number;
+  storeName: string;
+}> = [
+  { id: 'V001', orderId: '1', orderNo: 'MO-001', product: '低GI免煮米 2kg', barcode: '6901234567890', time: '2026-04-24 14:32:00', createdAt: '2026-04-24T14:32:00+08:00', staff: '陈小丽', status: 'success', pts: 20, amount: 60, itemCount: 1, storeName: '静安社区店' },
+  { id: 'V002', orderId: '2', orderNo: 'MO-002', product: '低GI免煮米 100g', barcode: '6901234567891', time: '2026-04-24 13:15:00', createdAt: '2026-04-24T13:15:00+08:00', staff: '王店长', status: 'success', pts: 20, amount: 36, itemCount: 1, storeName: '静安社区店' },
+  { id: 'V003', orderId: '3', orderNo: 'MO-003', product: '低GI免煮米 2.5kg', barcode: '6901234567892', time: '2026-04-24 11:48:00', createdAt: '2026-04-24T11:48:00+08:00', staff: '陈小丽', status: 'success', pts: 20, amount: 88, itemCount: 1, storeName: '静安社区店' },
+  { id: 'V004', orderId: '4', orderNo: 'MO-004', product: '未知商品', barcode: '0000000000000', time: '2026-04-24 10:22:00', createdAt: '2026-04-24T10:22:00+08:00', staff: '王店长', status: 'fail', pts: 0, amount: 0, itemCount: 0, storeName: '静安社区店' },
 ];
 
 export const MOCK_INVENTORY = [
