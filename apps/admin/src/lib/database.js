@@ -7763,6 +7763,7 @@ export async function getPurchaseOrderDetail(id, { itemsPage = 1, approvalsPage 
           purchase_orders.created_at,
           purchase_orders.delete_status,
           purchase_orders.company_id,
+          purchase_orders.store_id,
           companies.name AS company_name,
           companies.code AS company_code,
           company_stores.name AS store_name
