@@ -2,6 +2,12 @@
 
 import { useState } from 'react';
 
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/lib/utils';
+
 export interface AppRelease {
   id: string;
   platform: string;
@@ -28,9 +34,11 @@ export function AppReleasesClient({
   canEdit: boolean;
 }) {
   const [releases, setReleases] = useState<AppRelease[]>(initialReleases);
-  const [version, setVersion] = useState('');
-  const [versionCode, setVersionCode] = useState('');
-  const [notes, setNotes] = useState('');
+  const [draft, setDraft] = useState({
+    version: '',
+    versionCode: '',
+    notes: ''
+  });
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -61,9 +69,13 @@ export function AppReleasesClient({
     });
   }
 
+  function updateDraft(field: keyof typeof draft, value: string) {
+    setDraft((current) => ({ ...current, [field]: value }));
+  }
+
   async function handleUpload() {
     if (!file) return setMsg({ type: 'err', text: '请选择 APK 文件' });
-    if (!version.trim()) return setMsg({ type: 'err', text: '请填写版本号' });
+    if (!draft.version.trim()) return setMsg({ type: 'err', text: '请填写版本号' });
     setBusy(true);
     setProgress(0);
     setMsg(null);
@@ -80,20 +92,18 @@ export function AppReleasesClient({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          version: version.trim(),
-          versionCode: Number(versionCode) || 0,
+          version: draft.version.trim(),
+          versionCode: Number(draft.versionCode) || 0,
           fileKey: sign.key,
           fileName: file.name,
           fileSize: file.size,
-          notes: notes.trim()
+          notes: draft.notes.trim()
         })
       });
       const created = await createRes.json();
       if (!createRes.ok) throw new Error(created.message || '保存版本失败');
-      setMsg({ type: 'ok', text: `已发布 v${version.trim()}` });
-      setVersion('');
-      setVersionCode('');
-      setNotes('');
+      setMsg({ type: 'ok', text: `已发布 v${draft.version.trim()}` });
+      setDraft({ version: '', versionCode: '', notes: '' });
       setFile(null);
       await refresh();
     } catch (e) {
@@ -114,95 +124,105 @@ export function AppReleasesClient({
     await refresh();
   }
 
-  const inputCls =
-    'w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none';
+  const fieldCls = 'pointer-events-auto bg-background text-foreground';
 
   return (
     <div className='space-y-6'>
       <div>
-        <h1 className='text-xl font-bold'>应用发布</h1>
-        <p className='text-sm text-slate-500'>
+        <h1 className='text-xl font-bold text-foreground'>应用发布</h1>
+        <p className='text-sm text-muted-foreground'>
           上传安卓 APK 并发布新版本。公开下载页：
-          <a href='/download' target='_blank' className='text-emerald-600 underline'>
+          <a href='/download' target='_blank' className='text-primary underline underline-offset-4'>
             /download
           </a>
         </p>
       </div>
 
       {canEdit && (
-        <div className='rounded-xl border bg-white p-5'>
+        <div className='relative z-0 rounded-xl border bg-card p-5 text-card-foreground'>
           <h2 className='mb-4 font-semibold'>上传新版本</h2>
           <div className='grid gap-4 sm:grid-cols-2'>
             <label className='block'>
-              <span className='mb-1 block text-sm text-slate-600'>版本号（如 1.2.0）</span>
-              <input
-                className={inputCls}
-                value={version}
-                onChange={(e) => setVersion(e.target.value)}
+              <span className='mb-1 block text-sm text-muted-foreground'>版本号（如 1.2.0）</span>
+              <Input
+                name='version'
+                type='text'
+                autoComplete='off'
+                className={fieldCls}
+                value={draft.version}
+                onChange={(e) => updateDraft('version', e.target.value)}
+                onInput={(e) => updateDraft('version', e.currentTarget.value)}
                 disabled={busy}
               />
             </label>
             <label className='block'>
-              <span className='mb-1 block text-sm text-slate-600'>versionCode（整数，可选）</span>
-              <input
-                className={inputCls}
-                value={versionCode}
-                onChange={(e) => setVersionCode(e.target.value)}
+              <span className='mb-1 block text-sm text-muted-foreground'>versionCode（整数，可选）</span>
+              <Input
+                name='versionCode'
+                type='text'
+                autoComplete='off'
+                className={fieldCls}
+                value={draft.versionCode}
+                onChange={(e) => updateDraft('versionCode', e.target.value.replace(/\D/g, ''))}
+                onInput={(e) => updateDraft('versionCode', e.currentTarget.value.replace(/\D/g, ''))}
                 disabled={busy}
                 inputMode='numeric'
               />
             </label>
           </div>
           <label className='mt-4 block'>
-            <span className='mb-1 block text-sm text-slate-600'>更新说明（可选）</span>
-            <textarea
-              className={inputCls}
+            <span className='mb-1 block text-sm text-muted-foreground'>更新说明（可选）</span>
+            <Textarea
+              name='notes'
+              className={cn(fieldCls, 'min-h-24 resize-y')}
               rows={3}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
+              value={draft.notes}
+              onChange={(e) => updateDraft('notes', e.target.value)}
+              onInput={(e) => updateDraft('notes', e.currentTarget.value)}
               disabled={busy}
             />
           </label>
           <label className='mt-4 block'>
-            <span className='mb-1 block text-sm text-slate-600'>APK 文件</span>
-            <input
+            <span className='mb-1 block text-sm text-muted-foreground'>APK 文件</span>
+            <Input
               type='file'
               accept='.apk,application/vnd.android.package-archive'
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
               disabled={busy}
-              className='text-sm'
+              className={fieldCls}
             />
           </label>
 
           {busy && (
             <div className='mt-4'>
-              <div className='h-2 w-full overflow-hidden rounded bg-slate-100'>
-                <div className='h-full bg-emerald-500 transition-all' style={{ width: `${progress}%` }} />
+              <div className='h-2 w-full overflow-hidden rounded bg-muted'>
+                <div className='h-full bg-primary transition-all' style={{ width: `${progress}%` }} />
               </div>
-              <p className='mt-1 text-xs text-slate-500'>上传中 {progress}%</p>
+              <p className='mt-1 text-xs text-muted-foreground'>上传中 {progress}%</p>
             </div>
           )}
 
           {msg && (
-            <p className={`mt-3 text-sm ${msg.type === 'ok' ? 'text-emerald-600' : 'text-red-600'}`}>
-              {msg.text}
-            </p>
+            <Alert variant={msg.type === 'err' ? 'destructive' : 'default'} className='mt-3'>
+              <AlertDescription>{msg.text}</AlertDescription>
+            </Alert>
           )}
 
-          <button
+          <Button
+            type='button'
             onClick={handleUpload}
-            disabled={busy}
-            className='mt-4 rounded-lg bg-emerald-600 px-5 py-2 font-medium text-white hover:bg-emerald-700 disabled:opacity-50'
+            isLoading={busy}
+            className='mt-4'
           >
-            {busy ? '上传中…' : '上传并发布'}
-          </button>
+            上传并发布
+          </Button>
         </div>
       )}
 
-      <div className='rounded-xl border bg-white p-5'>
+      <div className='rounded-xl border bg-card p-5 text-card-foreground'>
         <h2 className='mb-4 font-semibold'>版本列表</h2>
         {releases.length === 0 ? (
-          <p className='py-6 text-center text-slate-400'>暂无版本</p>
+          <p className='py-6 text-center text-muted-foreground'>暂无版本</p>
         ) : (
           <div className='space-y-2'>
             {releases.map((r) => (
@@ -214,33 +234,38 @@ export function AppReleasesClient({
                   <div className='flex items-center gap-2'>
                     <span className='font-medium'>v{r.version}</span>
                     {r.isActive && (
-                      <span className='rounded bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700'>
+                      <span className='rounded bg-primary/10 px-2 py-0.5 text-xs text-primary'>
                         当前版本
                       </span>
                     )}
                   </div>
-                  <p className='truncate text-xs text-slate-400'>
+                  <p className='truncate text-xs text-muted-foreground'>
                     {formatSize(r.fileSize)} · {new Date(r.createdAt).toLocaleString('zh-CN')} ·{' '}
                     {r.createdBy || '-'}
                   </p>
-                  {r.notes && <p className='mt-1 text-xs text-slate-500'>{r.notes}</p>}
+                  {r.notes && <p className='mt-1 text-xs text-muted-foreground'>{r.notes}</p>}
                 </div>
                 {canEdit && (
                   <div className='flex gap-2'>
                     {!r.isActive && (
-                      <button
+                      <Button
+                        type='button'
+                        variant='outline'
+                        size='sm'
                         onClick={() => setActive(r.id)}
-                        className='rounded border px-3 py-1 text-xs hover:bg-slate-50'
                       >
                         设为当前
-                      </button>
+                      </Button>
                     )}
-                    <button
+                    <Button
+                      type='button'
+                      variant='outline'
+                      size='sm'
                       onClick={() => remove(r.id)}
-                      className='rounded border border-red-200 px-3 py-1 text-xs text-red-600 hover:bg-red-50'
+                      className='border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive'
                     >
                       删除
-                    </button>
+                    </Button>
                   </div>
                 )}
               </div>
