@@ -9,6 +9,7 @@ import type { MockUser, Role } from '../../data/mock';
 export type AuthUser = MockUser & {
   account?: string;
   roleName?: string;
+  roleScope?: string;
   companyName?: string;
   storeName?: string;
   companyId?: string;
@@ -48,6 +49,7 @@ function adaptUser(raw: SignInResponse['user']): AuthUser {
     points: undefined,
     account: raw.account,
     roleName: raw.roleName,
+    roleScope: raw.roleScope,
     companyName: raw.companyName,
     storeName: raw.storeName,
     companyId: raw.companyId,

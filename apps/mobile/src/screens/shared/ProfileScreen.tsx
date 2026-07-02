@@ -30,7 +30,13 @@ import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme
 import type { MockUser, Role } from '../../data/mock';
 
 interface ProfileScreenProps {
-  user: MockUser;
+  user: MockUser & {
+    roleName?: string;
+    roleScope?: string;
+    companyName?: string;
+    companyId?: string;
+    storeId?: string;
+  };
   onLogout: () => void;
 }
 
@@ -70,12 +76,18 @@ const MENU_ITEMS: MenuItem[] = [
   { IconComp: Help,      label: '帮助与反馈', sub: '使用帮助与意见反馈', color: Colors.warning,        route: 'Help' },
 ];
 
+function isHeadquartersUser(user: ProfileScreenProps['user']) {
+  const text = `${user.roleLabel ?? ''}${user.roleName ?? ''}${user.roleScope ?? ''}${user.companyName ?? ''}${user.org ?? ''}`;
+  return user.role === 'boss' || /老板|总部|总公司|平台|系统/.test(text);
+}
+
 export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
   const roleColor = ROLE_COLOR[user.role];
-  const visibleMenuItems = MENU_ITEMS.filter((item) => !(user.role === 'boss' && item.hideForBoss));
+  const isHeadquarters = isHeadquartersUser(user);
+  const visibleMenuItems = MENU_ITEMS.filter((item) => !(isHeadquarters && item.hideForBoss));
   const [avatarUrl, setAvatarUrl] = useState<string | null>(
     (user as { avatarUrl?: string }).avatarUrl || null,
   );
@@ -144,7 +156,7 @@ export function ProfileScreen({ user, onLogout }: ProfileScreenProps) {
           <Text style={styles.org}>{user.org}</Text>
         </View>
 
-        {user.role !== 'boss' && user.points != null && (
+        {!isHeadquarters && user.points != null && (
           <View style={styles.pointsWrap}>
             <Text style={styles.pointsValue}>{user.points.toLocaleString()}</Text>
             <Text style={styles.pointsLabel}>积分</Text>
