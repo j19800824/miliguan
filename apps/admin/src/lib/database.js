@@ -8631,7 +8631,7 @@ export async function createRecord(entity, payload, actorName = '后台用户', 
           ...payload,
           ...organization,
           phone,
-          department: await inferStaffDepartmentByRoleId(payload.role_id),
+          department: String(payload.department ?? '').trim() || (await inferStaffDepartmentByRoleId(payload.role_id)),
           password: await hashPassword(generateAccountPassword()),
           last_login: '从未登录'
         };
@@ -8697,7 +8697,7 @@ export async function updateRecord(entity, id, payload, actorName = '后台用�
           ...payload,
           ...organization,
           phone,
-          department: await inferStaffDepartmentByRoleId(payload.role_id),
+          department: String(payload.department ?? '').trim() || (await inferStaffDepartmentByRoleId(payload.role_id)),
           password:
             payload.password && String(payload.password).trim().length > 0
               ? await hashPassword(String(payload.password).trim())

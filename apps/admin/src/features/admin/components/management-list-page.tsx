@@ -509,12 +509,12 @@ export function ManagementListPage({
                             ) : null}
                             {config.entity === 'staff' && canWrite ? (
                               <Button variant='secondary' size='sm' onClick={() => openEdit(row)}>
-                                分配角色
+                                编辑
                               </Button>
                             ) : config.entity === 'staff' ? (
                               <DisabledActionButton
-                                label='分配角色'
-                                reason='当前账号没有员工编辑权限，无法调整员工角色。'
+                                label='编辑'
+                                reason='当前账号没有员工编辑权限，无法修改员工信息。'
                                 variant='secondary'
                               />
                             ) : null}

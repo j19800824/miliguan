@@ -175,7 +175,7 @@ export function createStaffConfig(
   return {
     entity: 'staff',
     title: '后台员工管理',
-    description: '管理后台账号、岗位角色与联系方式。部门和最近登录由系统自动维护。',
+    description: '管理后台账号、岗位角色、部门与联系方式。最近登录由系统自动维护。',
     viewPermission: 'staff:view',
     writePermission: 'staff:edit',
     searchPlaceholder: '搜索员工姓名、手机号或邮箱',
@@ -200,6 +200,7 @@ export function createStaffConfig(
       { name: 'name', label: '姓名', type: 'text', required: true },
       { name: 'account', label: '登录账号', type: 'text', required: true },
       { name: 'role_id', label: '岗位角色', type: 'select', required: true, options: roleOptions },
+      { name: 'department', label: '部门', type: 'text' },
       {
         name: 'company_id',
         label: '所属分公司',
