@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -9,7 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused, useNavigation, useRoute } from '@react-navigation/native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Colors, FontSize, Radius, Shadow, Spacing } from '../../constants/theme';
 import { postVerifyScan, type VerifyScanResult } from '../../services/api';
@@ -42,8 +42,10 @@ const SHOW_SCAN_DEMO_TRIGGERS = __DEV__;
 export function ScanScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
+  const route = useRoute();
   const isFocused = useIsFocused();
-  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void };
+  const nav = navigation as unknown as { navigate: (n: string, p?: object) => void; setParams: (p: object) => void };
+  const routeParams = (route.params ?? {}) as { clearCartToken?: number };
   const [permission, requestPermission] = useCameraPermissions();
   const [state, setState] = useState<ScanState>('scanning');
   const [result, setResult] = useState<VerifyScanResult | null>(null);
@@ -53,6 +55,19 @@ export function ScanScreen() {
   const [cart, setCart] = useState<CartItem[]>([]);
   // Throttle: avoid spamming the API while a barcode lingers in frame.
   const inFlightRef = useRef(false);
+  const clearedCartTokenRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!routeParams.clearCartToken || clearedCartTokenRef.current === routeParams.clearCartToken) {
+      return;
+    }
+    clearedCartTokenRef.current = routeParams.clearCartToken;
+    setCart([]);
+    setResult(null);
+    setState('scanning');
+    inFlightRef.current = false;
+    nav.setParams({ clearCartToken: undefined });
+  }, [nav, routeParams.clearCartToken]);
 
   const handleManualSubmit = () => {
     const code = manualCode.trim();
@@ -136,6 +151,21 @@ export function ScanScreen() {
 
   const cartTotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const cartPoints = cart.reduce((sum, item) => sum + item.points * item.quantity, 0);
+  const cartQuantityTotal = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+  const updateCartQuantity = (skuId: string, delta: number) => {
+    setCart((prev) =>
+      prev.flatMap((item) => {
+        if (item.skuId !== skuId) return [item];
+        const nextQuantity = Math.min(item.availableQuantity, Math.max(0, item.quantity + delta));
+        return nextQuantity > 0 ? [{ ...item, quantity: nextQuantity }] : [];
+      }),
+    );
+  };
+
+  const removeCartItem = (skuId: string) => {
+    setCart((prev) => prev.filter((item) => item.skuId !== skuId));
+  };
 
   const handlePayCart = () => {
     if (cart.length === 0) return;
@@ -144,7 +174,6 @@ export function ScanScreen() {
       amount: cartTotal,
       productName: cart.length === 1 ? cart[0].name : `${cart.length} 个商品`,
     });
-    setCart([]);
     handleReset();
   };
 
@@ -281,7 +310,7 @@ export function ScanScreen() {
           <View style={styles.cartHeader}>
             <Text style={styles.cartTitle}>待付款商品</Text>
             <Text style={styles.cartSummary}>
-              {cart.length} 个 SKU · ¥{cartTotal.toFixed(2)} · 回调 {cartPoints}
+              {cart.length} 个 SKU / {cartQuantityTotal} 件 · ¥{cartTotal.toFixed(2)} · 回调 {cartPoints}
             </Text>
           </View>
           {cart.map((item) => (
@@ -292,7 +321,31 @@ export function ScanScreen() {
                   {item.sku}{item.spec ? ` / ${item.spec}` : ''}
                 </Text>
               </View>
-              <Text style={styles.cartQty}>×{item.quantity}</Text>
+              <View style={styles.cartControls}>
+                <TouchableOpacity
+                  style={styles.qtyBtn}
+                  onPress={() => updateCartQuantity(item.skuId, -1)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.qtyBtnText}>−</Text>
+                </TouchableOpacity>
+                <Text style={styles.cartQty}>×{item.quantity}</Text>
+                <TouchableOpacity
+                  style={[styles.qtyBtn, item.quantity >= item.availableQuantity && styles.qtyBtnDisabled]}
+                  onPress={() => updateCartQuantity(item.skuId, 1)}
+                  disabled={item.quantity >= item.availableQuantity}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.qtyBtnText}>＋</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.removeBtn}
+                  onPress={() => removeCartItem(item.skuId)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.removeBtnText}>删</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))}
           <TouchableOpacity
@@ -328,14 +381,6 @@ export function ScanScreen() {
             </View>
           </View>
           <View style={styles.successActions}>
-            <TouchableOpacity
-              testID="scan-pay-now"
-              style={styles.payBtn}
-              onPress={handlePayCart}
-              activeOpacity={0.85}
-            >
-              <Text style={styles.payBtnText}>去付款</Text>
-            </TouchableOpacity>
             <TouchableOpacity
               testID="scan-continue"
               style={styles.continueBtn}
@@ -599,6 +644,34 @@ const styles = StyleSheet.create({
   cartItemName: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textPrimary },
   cartItemMeta: { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
   cartQty: { fontSize: FontSize.md, fontWeight: '800', color: Colors.primary },
+  cartControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  qtyBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surfaceSunken,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  qtyBtnDisabled: { opacity: 0.4 },
+  qtyBtnText: { fontSize: FontSize.sm, fontWeight: '900', color: Colors.textPrimary },
+  removeBtn: {
+    paddingHorizontal: 8,
+    height: 28,
+    borderRadius: Radius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.dangerBg,
+    borderWidth: 1,
+    borderColor: `${Colors.danger}55`,
+  },
+  removeBtnText: { fontSize: FontSize.xs, fontWeight: '800', color: Colors.danger },
   cartPayBtn: {
     backgroundColor: Colors.gold,
     borderRadius: Radius.md,

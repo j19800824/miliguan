@@ -240,7 +240,7 @@ export function AppReleasesClient({
                     )}
                   </div>
                   <p className='truncate text-xs text-muted-foreground'>
-                    {formatSize(r.fileSize)} · {new Date(r.createdAt).toLocaleString('zh-CN')} ·{' '}
+                    versionCode {r.versionCode || '-'} · {formatSize(r.fileSize)} · {new Date(r.createdAt).toLocaleString('zh-CN')} ·{' '}
                     {r.createdBy || '-'}
                   </p>
                   {r.notes && <p className='mt-1 text-xs text-muted-foreground'>{r.notes}</p>}

@@ -9659,6 +9659,7 @@ export async function getStoreInventory(storeId) {
         INNER JOIN product_skus ps ON ps.id = si.sku_id
         INNER JOIN products p ON p.id = ps.product_id
         WHERE si.store_id = $1
+          AND si.quantity > 0
         ORDER BY (si.quantity <= si.safety_stock) DESC, p.name
       `,
       [Number(storeId)]

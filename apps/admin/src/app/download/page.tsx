@@ -37,6 +37,12 @@ export default async function DownloadPage() {
               <span className='text-sm text-slate-500'>当前版本</span>
               <span className='font-semibold text-slate-900'>v{release.version}</span>
             </div>
+            {release.versionCode ? (
+              <div className='flex items-center justify-between'>
+                <span className='text-sm text-slate-500'>versionCode</span>
+                <span className='text-slate-700'>{release.versionCode}</span>
+              </div>
+            ) : null}
             {release.fileSize ? (
               <div className='flex items-center justify-between'>
                 <span className='text-sm text-slate-500'>安装包大小</span>

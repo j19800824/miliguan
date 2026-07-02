@@ -50,7 +50,10 @@ const RECIPIENT_LABEL: Record<string, string> = {
 export function PaymentScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const nav = navigation as unknown as { goBack: () => void };
+  const nav = navigation as unknown as {
+    goBack: () => void;
+    navigate: (screen: string, params?: object) => void;
+  };
   const route = useRoute();
   const params = (route.params ?? {}) as RouteParams;
 
@@ -158,6 +161,17 @@ export function PaymentScreen() {
     }
   };
 
+  const finishPayment = () => {
+    if (params.cartItems?.length) {
+      nav.navigate('Tabs', {
+        screen: 'Scan',
+        params: { clearCartToken: Date.now() },
+      });
+      return;
+    }
+    nav.goBack();
+  };
+
   if (creating || !payment) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -216,7 +230,7 @@ export function PaymentScreen() {
 
         <TouchableOpacity
           style={styles.primaryBtn}
-          onPress={() => nav.goBack()}
+          onPress={finishPayment}
           activeOpacity={0.85}
         >
           <Text style={styles.primaryBtnText}>完成</Text>
