@@ -709,6 +709,7 @@ async function createTables() {
       abnormal_flag BOOLEAN NOT NULL DEFAULT FALSE,
       approval_status TEXT NOT NULL,
       order_quota_deducted BOOLEAN NOT NULL DEFAULT FALSE,
+      company_stock_deducted BOOLEAN NOT NULL DEFAULT FALSE,
       stock_received BOOLEAN NOT NULL DEFAULT FALSE,
       delete_status TEXT NOT NULL DEFAULT '正常',
       deleted_at TIMESTAMPTZ,
@@ -1069,6 +1070,7 @@ async function migrateTables() {
   await query(`ALTER TABLE company_stores ADD COLUMN IF NOT EXISTS total_order_quota NUMERIC(12, 2) NOT NULL DEFAULT 0`);
   await query(`ALTER TABLE company_stores ADD COLUMN IF NOT EXISTS first_purchase_rebate_done BOOLEAN NOT NULL DEFAULT FALSE`);
   await query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS store_id INTEGER REFERENCES company_stores(id) ON DELETE SET NULL`);
+  await query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS company_stock_deducted BOOLEAN NOT NULL DEFAULT FALSE`);
   await query(`ALTER TABLE member_orders ADD COLUMN IF NOT EXISTS customer_type TEXT NOT NULL DEFAULT 'walk_in'`);
   await query(`ALTER TABLE member_orders ADD COLUMN IF NOT EXISTS member_id INTEGER REFERENCES members(id) ON DELETE SET NULL`);
   await query(`ALTER TABLE member_orders ADD COLUMN IF NOT EXISTS writeoff_quota_rebated BOOLEAN NOT NULL DEFAULT FALSE`);
@@ -4075,6 +4077,47 @@ export async function getProductSkuOptions() {
   }));
 }
 
+export async function getMobileReplenishmentSkuOptions(user = {}) {
+  await initializeDatabase();
+  if (user?.storeId) {
+    const rows = (
+      await query(
+        `
+          SELECT
+            product_skus.id,
+            product_skus.sku_code,
+            product_skus.spec,
+            product_skus.order_quota_price,
+            products.name AS product_name,
+            company_inventory.quantity AS available_quantity
+          FROM company_inventory
+          INNER JOIN product_skus ON product_skus.id = company_inventory.sku_id
+          INNER JOIN products ON products.id = product_skus.product_id
+          WHERE company_inventory.company_id = $1
+            AND company_inventory.delete_status = '正常'
+            AND company_inventory.quantity > 0
+            AND product_skus.status = '启用'
+            AND product_skus.delete_status = '正常'
+            AND products.delete_status = '正常'
+          ORDER BY products.name ASC, product_skus.id ASC
+        `,
+        [Number(user.companyId)]
+      )
+    ).rows;
+    return rows.map((row) => ({
+      value: String(row.id),
+      label: `${row.product_name} / ${row.spec} / ${row.sku_code}`,
+      skuCode: row.sku_code,
+      productName: row.product_name,
+      spec: row.spec,
+      orderQuotaPrice: toNumber(row.order_quota_price),
+      availableQuantity: toNumber(row.available_quantity)
+    }));
+  }
+
+  return getProductSkuOptions();
+}
+
 export async function getPurchaseOrderOptions(user = {}) {
   await initializeDatabase();
   const params = [];
@@ -6585,6 +6628,7 @@ export async function approvePurchaseOrder(id, payload = {}, actorName = '后台
           purchase_orders.status,
           purchase_orders.order_quota_total,
           purchase_orders.order_quota_deducted,
+          purchase_orders.company_stock_deducted,
           purchase_orders.stock_received
         FROM purchase_orders
         INNER JOIN companies ON companies.id = purchase_orders.company_id
@@ -6648,13 +6692,14 @@ export async function approvePurchaseOrder(id, payload = {}, actorName = '后台
     }
   }
 
-  let finalStatus = payload.final_status ?? '已入库';
+  let finalStatus = payload.final_status ?? (order.store_id ? '待入库' : '已入库');
   if (finalStatus !== '已入库' && finalStatus !== '待入库') {
     finalStatus = '已入库';
   }
 
   let shouldMarkStockReceived = false;
-  if (finalStatus === '已入库' && !order.stock_received) {
+  let shouldMarkCompanyStockDeducted = false;
+  if ((finalStatus === '待入库' || finalStatus === '已入库') && order.store_id && !order.company_stock_deducted) {
     const items = (
       await query(
         `
@@ -6679,31 +6724,47 @@ export async function approvePurchaseOrder(id, payload = {}, actorName = '后台
       )
     ).rows;
 
-    if (order.store_id) {
-      const insufficientItems = items.filter(
-        (item) => toNumber(item.company_quantity) < toNumber(item.quantity)
-      );
-      if (insufficientItems.length > 0) {
-        const detail = insufficientItems
-          .map((item) => {
-            const name = `${item.product_name ?? '商品'} ${item.spec ?? item.sku_code ?? ''}`.trim();
-            return `${name} 当前 ${toNumber(item.company_quantity)}，需要 ${toNumber(item.quantity)}`;
-          })
-          .join('；');
-        throw new Error(`分公司库存不足：${detail}`);
-      }
+    const insufficientItems = items.filter(
+      (item) => toNumber(item.company_quantity) < toNumber(item.quantity)
+    );
+    if (insufficientItems.length > 0) {
+      const detail = insufficientItems
+        .map((item) => {
+          const name = `${item.product_name ?? '商品'} ${item.spec ?? item.sku_code ?? ''}`.trim();
+          return `${name} 当前 ${toNumber(item.company_quantity)}，需要 ${toNumber(item.quantity)}`;
+        })
+        .join('；');
+      throw new Error(`分公司库存不足：${detail}`);
     }
 
     for (const item of items) {
+      await upsertInventory(
+        order.company_id,
+        item.sku_id,
+        -toNumber(item.quantity),
+        '门店订货审核扣减',
+        id,
+        '门店订货审核通过，扣减分公司可用库存'
+      );
+    }
+    shouldMarkCompanyStockDeducted = true;
+  }
+
+  if (finalStatus === '已入库' && !order.stock_received) {
+    const items = (
+      await query(
+        `
+          SELECT sku_id, quantity
+          FROM purchase_order_items
+          WHERE purchase_order_id = $1
+          ORDER BY id ASC
+        `,
+        [Number(id)]
+      )
+    ).rows;
+
+    for (const item of items) {
       if (order.store_id) {
-        await upsertInventory(
-          order.company_id,
-          item.sku_id,
-          -toNumber(item.quantity),
-          '门店订货出库',
-          id,
-          '门店订货调拨给门店'
-        );
         await upsertStoreInventory(
           order.company_id,
           order.store_id,
@@ -6737,12 +6798,13 @@ export async function approvePurchaseOrder(id, payload = {}, actorName = '后台
         approval_status = '已通过',
         abnormal_flag = FALSE,
         order_quota_deducted = TRUE,
+        company_stock_deducted = CASE WHEN $6 THEN TRUE ELSE company_stock_deducted END,
         stock_received = CASE WHEN $5 THEN TRUE ELSE stock_received END,
         updated_by = $2,
         updated_at = $3
       WHERE id = $4
     `,
-    [finalStatus, actorName, now(), Number(id), shouldMarkStockReceived]
+    [finalStatus, actorName, now(), Number(id), shouldMarkStockReceived, shouldMarkCompanyStockDeducted]
   );
 
   await appendApprovalLog({
@@ -7786,6 +7848,7 @@ export async function getPurchaseOrderDetail(id, { itemsPage = 1, approvalsPage 
           purchase_orders.abnormal_flag,
           purchase_orders.approval_status,
           purchase_orders.order_quota_deducted,
+          purchase_orders.company_stock_deducted,
           purchase_orders.stock_received,
           purchase_orders.updated_at,
           purchase_orders.created_at,
@@ -7867,6 +7930,7 @@ export async function getPurchaseOrderDetail(id, { itemsPage = 1, approvalsPage 
     abnormal_flag: boolValue(order.abnormal_flag),
     approval_status: order.approval_status,
     order_quota_deducted: boolValue(order.order_quota_deducted),
+    company_stock_deducted: boolValue(order.company_stock_deducted),
     stock_received: boolValue(order.stock_received),
     updated_at: new Date(order.updated_at).toLocaleString('zh-CN', { hour12: false }),
     delete_status: order.delete_status,
@@ -8647,11 +8711,11 @@ export async function deleteRecord(entity, id, actorName = '后台用户', user 
           requestNote: '提交库存记录删除申请'
         });
         return { success: true, id: requestId, message: '库存记录删除申请已提交，待审核通过后执行' };
-      }
+    }
     case 'purchase-orders': {
-      const order = (await query('SELECT order_quota_deducted, stock_received FROM purchase_orders WHERE id = $1', [Number(id)])).rows[0];
-      if (order?.order_quota_deducted || order?.stock_received) {
-        throw new Error('已扣减订货额度或已入库的订货单不能直接删除');
+      const order = (await query('SELECT order_quota_deducted, company_stock_deducted, stock_received FROM purchase_orders WHERE id = $1', [Number(id)])).rows[0];
+      if (order?.order_quota_deducted || order?.company_stock_deducted || order?.stock_received) {
+        throw new Error('已扣减订货额度、已扣减分公司库存或已入库的订货单不能直接删除');
       }
       const row = (await query('SELECT id, order_no, status FROM purchase_orders WHERE id = $1', [Number(id)])).rows[0];
       const requestId = await insertDeleteRequest({
@@ -9530,6 +9594,7 @@ export async function ensureStoreInventoryTables() {
   `);
   await query(`CREATE INDEX IF NOT EXISTS idx_store_inventory_store ON store_inventory(store_id);`);
   await query(`ALTER TABLE inventory_logs ADD COLUMN IF NOT EXISTS store_id INTEGER REFERENCES company_stores(id) ON DELETE SET NULL;`);
+  await query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS company_stock_deducted BOOLEAN NOT NULL DEFAULT FALSE`);
   storeInventoryReady = true;
 }
 
@@ -9586,15 +9651,76 @@ export async function createReplenishment(user, items, remark = '') {
     await client.query('BEGIN');
 
     const skuIds = items.map((it) => Number(it.sku_id)).filter(Boolean);
+    const skuQuery = isStoreLevel
+      ? `
+          SELECT
+            product_skus.id,
+            product_skus.order_quota_price,
+            product_skus.sku_code,
+            product_skus.spec,
+            products.name AS product_name,
+            company_inventory.quantity AS company_quantity
+          FROM product_skus
+          INNER JOIN products ON products.id = product_skus.product_id
+          INNER JOIN company_inventory
+            ON company_inventory.company_id = $2
+           AND company_inventory.sku_id = product_skus.id
+           AND company_inventory.delete_status = '正常'
+          WHERE product_skus.id = ANY($1::int[])
+            AND product_skus.status = '启用'
+            AND product_skus.delete_status = '正常'
+            AND products.delete_status = '正常'
+          FOR UPDATE OF company_inventory
+        `
+      : `
+          SELECT
+            product_skus.id,
+            product_skus.order_quota_price,
+            product_skus.sku_code,
+            product_skus.spec,
+            products.name AS product_name,
+            0 AS company_quantity
+          FROM product_skus
+          INNER JOIN products ON products.id = product_skus.product_id
+          WHERE product_skus.id = ANY($1::int[])
+            AND product_skus.status = '启用'
+            AND product_skus.delete_status = '正常'
+            AND products.delete_status = '正常'
+        `;
     const skuRows = (
       await client.query(
-        `SELECT id, order_quota_price FROM product_skus WHERE id = ANY($1::int[])`,
-        [skuIds]
+        skuQuery,
+        [skuIds, Number(user.companyId)]
       )
     ).rows;
     const priceBySku = new Map(
       skuRows.map((r) => [String(r.id), Number(r.order_quota_price ?? 0)])
     );
+    const skuById = new Map(skuRows.map((row) => [String(row.id), row]));
+    const quantityBySku = new Map();
+    for (const it of items) {
+      const skuId = String(it.sku_id);
+      quantityBySku.set(skuId, (quantityBySku.get(skuId) ?? 0) + Number(it.quantity || 0));
+    }
+    if (skuRows.length !== new Set(skuIds).size) {
+      throw new Error('存在不可进货或已停用的 SKU');
+    }
+    if (isStoreLevel) {
+      const insufficient = [...quantityBySku.entries()].filter(([skuId, qty]) => {
+        const row = skuById.get(String(skuId));
+        return !row || Number(row.company_quantity ?? 0) < Number(qty ?? 0);
+      });
+      if (insufficient.length > 0) {
+        const detail = insufficient
+          .map(([skuId, qty]) => {
+            const row = skuById.get(String(skuId));
+            const name = `${row?.product_name ?? '商品'} ${row?.spec ?? row?.sku_code ?? ''}`.trim();
+            return `${name} 当前 ${toNumber(row?.company_quantity)}，申请 ${Number(qty)}`;
+          })
+          .join('；');
+        throw new Error(`分公司可进货库存不足：${detail}`);
+      }
+    }
 
     const total = items.reduce((sum, it) => {
       const price = priceBySku.get(String(it.sku_id)) ?? 0;
@@ -9656,7 +9782,7 @@ export async function approveReplenishment(orderId, decision, actor) {
 
     const order = (
       await client.query(
-        `SELECT id, order_no, company_id, store_id, status
+        `SELECT id, order_no, company_id, store_id, status, company_stock_deducted
          FROM purchase_orders WHERE id = $1 FOR UPDATE`,
         [Number(orderId)]
       )
@@ -9677,79 +9803,82 @@ export async function approveReplenishment(orderId, decision, actor) {
       return { id: String(order.id), orderNo: order.order_no, status: '已驳回' };
     }
 
-    // Approve: transfer stock from company_inventory to store_inventory.
+    // Approve: deduct/lock branch stock. Store inventory is increased only when the store confirms receipt.
     const items = (
       await client.query(
-        `SELECT sku_id, quantity FROM purchase_order_items WHERE purchase_order_id = $1`,
+        `
+          SELECT
+            purchase_order_items.sku_id,
+            purchase_order_items.quantity,
+            product_skus.sku_code,
+            product_skus.spec,
+            products.name AS product_name
+          FROM purchase_order_items
+          INNER JOIN product_skus ON product_skus.id = purchase_order_items.sku_id
+          INNER JOIN products ON products.id = product_skus.product_id
+          WHERE purchase_order_items.purchase_order_id = $1
+          ORDER BY purchase_order_items.id ASC
+        `,
         [order.id]
       )
     ).rows;
 
-    for (const it of items) {
-      const skuId = Number(it.sku_id);
-      const qty = Number(it.quantity);
-
-      const ci = (
+    if (!order.company_stock_deducted) {
+      const inventoryRows = (
         await client.query(
-          `SELECT id, quantity FROM company_inventory
-           WHERE company_id = $1 AND sku_id = $2 AND delete_status = '正常'
-           FOR UPDATE`,
-          [order.company_id, skuId]
+          `
+            SELECT id, sku_id, quantity
+            FROM company_inventory
+            WHERE company_id = $1
+              AND sku_id = ANY($2::int[])
+              AND delete_status = '正常'
+            FOR UPDATE
+          `,
+          [order.company_id, items.map((item) => Number(item.sku_id))]
         )
-      ).rows[0];
-      if (!ci || Number(ci.quantity) < qty) {
-        throw new Error(`SKU ${skuId} 分公司库存不足`);
+      ).rows;
+      const inventoryBySku = new Map(inventoryRows.map((row) => [Number(row.sku_id), row]));
+      const insufficient = items.filter((item) => {
+        const inv = inventoryBySku.get(Number(item.sku_id));
+        return !inv || Number(inv.quantity ?? 0) < Number(item.quantity ?? 0);
+      });
+      if (insufficient.length > 0) {
+        const detail = insufficient
+          .map((item) => {
+            const inv = inventoryBySku.get(Number(item.sku_id));
+            const name = `${item.product_name ?? '商品'} ${item.spec ?? item.sku_code ?? ''}`.trim();
+            return `${name} 当前 ${Number(inv?.quantity ?? 0)}，需要 ${Number(item.quantity ?? 0)}`;
+          })
+          .join('；');
+        throw new Error(`分公司库存不足：${detail}`);
       }
-      const newCompanyQty = Number(ci.quantity) - qty;
-      await client.query(
-        `UPDATE company_inventory SET quantity = $1, updated_by = $3, updated_at = NOW() WHERE id = $2`,
-        [newCompanyQty, ci.id, actor ?? '后台用户']
-      );
-      await client.query(
-        `INSERT INTO inventory_logs (company_id, sku_id, source_type, source_id, change_type, quantity, balance_after, remark, created_at, store_id)
-         VALUES ($1, $2, 'replenishment', $3, '调出', $4, $5, '调拨给门店', NOW(), NULL)`,
-        [order.company_id, skuId, String(order.id), -qty, newCompanyQty]
-      );
-
-      const ts = now();
-      const existing = (
+      for (const it of items) {
+        const skuId = Number(it.sku_id);
+        const qty = Number(it.quantity);
+        const ci = inventoryBySku.get(skuId);
+        const newCompanyQty = Number(ci.quantity) - qty;
         await client.query(
-          `SELECT id, quantity FROM store_inventory WHERE store_id = $1 AND sku_id = $2 FOR UPDATE`,
-          [order.store_id, skuId]
-        )
-      ).rows[0];
-      let newStoreQty;
-      if (existing) {
-        newStoreQty = Number(existing.quantity) + qty;
-        await client.query(
-          `UPDATE store_inventory SET quantity = $1, updated_at = $3 WHERE id = $2`,
-          [newStoreQty, existing.id, ts]
+          `UPDATE company_inventory SET quantity = $1, updated_by = $3, updated_at = NOW() WHERE id = $2`,
+          [newCompanyQty, ci.id, actor ?? '后台用户']
         );
-      } else {
-        newStoreQty = qty;
         await client.query(
-          `INSERT INTO store_inventory (company_id, store_id, sku_id, quantity, safety_stock, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, 0, $5, $5)`,
-          [order.company_id, order.store_id, skuId, qty, ts]
+          `INSERT INTO inventory_logs (company_id, sku_id, source_type, source_id, change_type, quantity, balance_after, remark, created_at, store_id)
+           VALUES ($1, $2, '门店订货审核扣减', $3, '出库', $4, $5, '门店订货审核通过，扣减分公司可用库存', NOW(), NULL)`,
+          [order.company_id, skuId, String(order.id), -qty, newCompanyQty]
         );
       }
-      await client.query(
-        `INSERT INTO inventory_logs (company_id, sku_id, source_type, source_id, change_type, quantity, balance_after, remark, created_at, store_id)
-         VALUES ($1, $2, 'replenishment', $3, '调入', $4, $5, '门店补货入库', NOW(), $6)`,
-        [order.company_id, skuId, String(order.id), qty, newStoreQty, order.store_id]
-      );
     }
 
     await client.query(
       `UPDATE purchase_orders
-         SET status = '已入库', approval_status = '已通过',
-             order_quota_deducted = TRUE, stock_received = TRUE,
+         SET status = '待入库', approval_status = '已通过',
+             order_quota_deducted = TRUE, company_stock_deducted = TRUE,
              updated_by = $2, updated_at = NOW()
        WHERE id = $1`,
       [order.id, actor ?? '后台用户']
     );
     await client.query('COMMIT');
-    return { id: String(order.id), orderNo: order.order_no, status: '已入库' };
+    return { id: String(order.id), orderNo: order.order_no, status: '待入库' };
   } catch (err) {
     await client.query('ROLLBACK');
     throw err;

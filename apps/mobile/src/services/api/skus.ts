@@ -4,13 +4,14 @@ export interface SkuOption {
   id: string;
   label: string;
   price: number;
+  availableQuantity?: number;
 }
 
 const MOCK_SKUS: SkuOption[] = [
-  { id: '1', label: '低GI免煮米 / 2kg / MLG-2KG-001', price: 60 },
-  { id: '2', label: '低GI免煮米 / 100g×25 / MLG-100G-25', price: 170 },
-  { id: '3', label: '低GI免煮米 / 2.5kg / MLG-2.5KG-001', price: 75 },
-  { id: '4', label: '低GI免煮米 / 100g / MLG-100G-001', price: 12 },
+  { id: '1', label: '低GI免煮米 / 2kg / MLG-2KG-001', price: 60, availableQuantity: 30 },
+  { id: '2', label: '低GI免煮米 / 100g×25 / MLG-100G-25', price: 170, availableQuantity: 12 },
+  { id: '3', label: '低GI免煮米 / 2.5kg / MLG-2.5KG-001', price: 75, availableQuantity: 8 },
+  { id: '4', label: '低GI免煮米 / 100g / MLG-100G-001', price: 12, availableQuantity: 50 },
 ];
 
 export async function fetchSkuOptions(): Promise<SkuOption[]> {

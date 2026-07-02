@@ -108,6 +108,7 @@ export function ReplenishmentDetailScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>进货概况</Text>
         <InfoRow label="审核状态" value={detail.approvalStatus} />
+        <InfoRow label="分公司库存" value={detail.companyStockDeducted ? '已扣减' : '未扣减'} />
         <InfoRow label="库存入库" value={detail.stockReceived ? '已入库' : '未入库'} />
         <InfoRow label="订货额扣减" value={detail.quotaDeducted ? '已扣减' : '未扣减'} />
         <InfoRow label="订货额消耗" value={detail.totalAmount.toLocaleString()} />

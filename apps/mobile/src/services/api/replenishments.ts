@@ -31,6 +31,7 @@ export interface ReplenishmentDetail {
   remark: string;
   stockReceived: boolean;
   quotaDeducted: boolean;
+  companyStockDeducted?: boolean;
   createdAt: string;
   updatedAt: string;
   items: ReplenishmentItem[];

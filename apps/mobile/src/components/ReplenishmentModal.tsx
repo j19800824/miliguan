@@ -47,7 +47,9 @@ export function ReplenishmentModal({
   }, [visible]);
 
   const setQty = (sku: SkuOption, raw: string) => {
-    const qty = parseInt(raw, 10);
+    const requestedQty = parseInt(raw, 10);
+    const maxQty = sku.availableQuantity ?? Number.MAX_SAFE_INTEGER;
+    const qty = Number.isFinite(requestedQty) ? Math.min(requestedQty, maxQty) : 0;
     setCart((prev) => {
       const next = { ...prev };
       if (!qty || qty <= 0) delete next[sku.id];
@@ -63,6 +65,16 @@ export function ReplenishmentModal({
     }));
     if (items.length === 0) {
       Alert.alert('请填写数量');
+      return;
+    }
+    const overLimit = Object.values(cart).find(
+      (line) => line.sku.availableQuantity !== undefined && line.qty > line.sku.availableQuantity,
+    );
+    if (overLimit) {
+      Alert.alert(
+        '库存不足',
+        `${overLimit.sku.label} 当前最多可进 ${overLimit.sku.availableQuantity ?? 0} 件`,
+      );
       return;
     }
     setSubmitting(true);
@@ -104,6 +116,9 @@ export function ReplenishmentModal({
                   </Text>
                   <Text style={styles.skuPrice}>
                     单价 {item.price.toFixed(2)} 元
+                    {item.availableQuantity !== undefined
+                      ? ` · 分公司可进 ${item.availableQuantity} 件`
+                      : ''}
                   </Text>
                 </View>
                 <TextInput

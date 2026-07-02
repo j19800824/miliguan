@@ -43,6 +43,7 @@ export async function GET(
       remark: detail.remark ?? '',
       stockReceived: detail.stock_received,
       quotaDeducted: detail.order_quota_deducted,
+      companyStockDeducted: detail.company_stock_deducted,
       createdAt: detail.created_at,
       updatedAt: detail.updated_at,
       items: items.map((item: PurchaseOrderItemRow) => ({

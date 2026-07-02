@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import { getMobileSession } from '@/lib/auth/mobile';
-import { getProductSkuOptions } from '@/lib/database.js';
+import { getMobileReplenishmentSkuOptions } from '@/lib/database.js';
 
 interface DbSkuOption {
   value: string;
   label: string;
+  orderQuotaPrice?: number | string;
+  availableQuantity?: number | string;
   meta?: { price?: number | string; spec?: string; product_name?: string };
 }
 
@@ -15,12 +17,13 @@ export async function GET(req: Request) {
   }
 
   try {
-    const options = (await getProductSkuOptions()) as DbSkuOption[];
+    const options = (await getMobileReplenishmentSkuOptions(user)) as DbSkuOption[];
     return NextResponse.json(
       options.map((opt) => ({
         id: opt.value,
         label: opt.label,
-        price: Number(opt.meta?.price ?? 0),
+        price: Number(opt.orderQuotaPrice ?? opt.meta?.price ?? 0),
+        availableQuantity: Number(opt.availableQuantity ?? 0),
       })),
     );
   } catch (error) {
