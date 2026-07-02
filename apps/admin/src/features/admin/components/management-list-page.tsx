@@ -725,70 +725,91 @@ export function ManagementListPage({
                 </div>
               </div>
             ) : null}
-            {config.fields.map((field) => (
-              <div key={field.name} className='grid gap-2'>
-                <Label htmlFor={field.name}>{field.label}</Label>
-                {field.type === 'textarea' ? (
-                  <Textarea
-                    id={field.name}
-                    value={String(formData[field.name] ?? '')}
-                    className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}
-                    onChange={(event) =>
-                      setFormData((prev) => {
-                        setFieldErrors((errors) => {
-                          const { [field.name]: _ignored, ...rest } = errors;
-                          return rest;
-                        });
-                        return { ...prev, [field.name]: event.target.value };
-                      })
-                    }
-                  />
-                ) : field.type === 'select' ? (
-                  <Select
-                    value={String(formData[field.name] ?? '')}
-                    onValueChange={(value) =>
-                      setFormData((prev) => {
-                        setFieldErrors((errors) => {
-                          const { [field.name]: _ignored, ...rest } = errors;
-                          return rest;
-                        });
-                        return { ...prev, [field.name]: value };
-                      })
-                    }
-                  >
-                    <SelectTrigger className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}>
-                      <SelectValue placeholder={`请选择${field.label}`} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {field.options?.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <Input
-                    id={field.name}
-                    type={field.type}
-                    value={String(formData[field.name] ?? '')}
-                    className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}
-                    onChange={(event) =>
-                      setFormData((prev) => {
-                        setFieldErrors((errors) => {
-                          const { [field.name]: _ignored, ...rest } = errors;
-                          return rest;
-                        });
-                        return { ...prev, [field.name]: event.target.value };
-                      })
-                    }
-                  />
-                )}
-                {fieldErrors[field.name] ? (
-                  <p className='text-xs text-destructive'>{fieldErrors[field.name]}</p>
-                ) : null}
-              </div>
-            ))}
+            {config.fields.map((field) => {
+              const selectedCompanyId = String(formData.company_id ?? 'none');
+              const options =
+                field.name === 'store_id' && field.options?.some((option) => option.companyId)
+                  ? field.options.filter((option) => option.value === 'none' || (selectedCompanyId !== 'none' && option.companyId === selectedCompanyId))
+                  : field.options;
+
+              return (
+                <div key={field.name} className='grid gap-2'>
+                  <Label htmlFor={field.name}>{field.label}</Label>
+                  {field.type === 'textarea' ? (
+                    <Textarea
+                      id={field.name}
+                      value={String(formData[field.name] ?? '')}
+                      className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}
+                      onChange={(event) =>
+                        setFormData((prev) => {
+                          setFieldErrors((errors) => {
+                            const { [field.name]: _ignored, ...rest } = errors;
+                            return rest;
+                          });
+                          return { ...prev, [field.name]: event.target.value };
+                        })
+                      }
+                    />
+                  ) : field.type === 'select' ? (
+                    <Select
+                      value={String(formData[field.name] ?? '')}
+                      onValueChange={(value) =>
+                        setFormData((prev) => {
+                          setFieldErrors((errors) => {
+                            if (field.name === 'company_id') {
+                              const { company_id: _companyIgnored, store_id: _storeIgnored, ...rest } = errors;
+                              return rest;
+                            }
+                            const { [field.name]: _ignored, ...rest } = errors;
+                            return rest;
+                          });
+                          const next = { ...prev, [field.name]: value };
+                          if (field.name === 'company_id') {
+                            const storeField = config.fields.find((item) => item.name === 'store_id');
+                            const selectedStore = storeField?.options?.find((option) => option.value === String(prev.store_id ?? 'none'));
+                            if (value === 'none' || (selectedStore?.companyId && selectedStore.companyId !== value)) {
+                              next.store_id = 'none';
+                            }
+                          }
+                          return next;
+                        })
+                      }
+                      disabled={field.name === 'store_id' && selectedCompanyId === 'none'}
+                    >
+                      <SelectTrigger className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}>
+                        <SelectValue placeholder={`请选择${field.label}`} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {options?.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id={field.name}
+                      type={field.type}
+                      value={String(formData[field.name] ?? '')}
+                      className={cn(fieldErrors[field.name] && 'border-destructive ring-destructive/30')}
+                      onChange={(event) =>
+                        setFormData((prev) => {
+                          setFieldErrors((errors) => {
+                            const { [field.name]: _ignored, ...rest } = errors;
+                            return rest;
+                          });
+                          return { ...prev, [field.name]: event.target.value };
+                        })
+                      }
+                    />
+                  )}
+                  {fieldErrors[field.name] ? (
+                    <p className='text-xs text-destructive'>{fieldErrors[field.name]}</p>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
           <DialogFooter>
             <Button variant='outline' onClick={() => setIsDialogOpen(false)}>

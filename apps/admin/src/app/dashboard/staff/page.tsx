@@ -1,7 +1,7 @@
 import { ManagementListPage } from '@/features/admin/components/management-list-page';
 import { createStaffConfig } from '@/features/admin/data/management-data';
 import { hasPermission, requirePermission } from '@/lib/auth/server';
-import { getRoleOptions, getStaffStats, listAdminStaff } from '@/lib/database.js';
+import { getCompanyOptions, getRoleOptions, getStaffStats, getStoreOptions, listAdminStaff } from '@/lib/database.js';
 
 export const metadata = {
   title: '米粒冠后台 - 后台员工管理'
@@ -20,8 +20,11 @@ export default async function StaffPage({
   const roleOptions = await getRoleOptions();
   const config = createStaffConfig(roleOptions);
   const user = await requirePermission(config.viewPermission);
-  const result = await listAdminStaff({ search, role, page, pageSize });
-  const stats = await getStaffStats();
+  const companyOptions = await getCompanyOptions(user);
+  const storeOptions = await getStoreOptions('all', user);
+  const scopedConfig = createStaffConfig(roleOptions, companyOptions, storeOptions);
+  const result = await listAdminStaff({ search, role, page, pageSize, user });
+  const stats = await getStaffStats(user);
   const metrics = [
     { label: '后台员工', value: `${stats.total}`, hint: '后台账号总数' },
     { label: '在职员工', value: `${stats.active}`, hint: '当前正常在岗人员' },
@@ -30,7 +33,7 @@ export default async function StaffPage({
 
   return (
     <ManagementListPage
-      config={createStaffConfig(roleOptions)}
+      config={scopedConfig}
       rows={result.rows}
       total={result.total}
       page={result.page}

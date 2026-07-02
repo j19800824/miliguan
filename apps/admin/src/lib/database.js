@@ -2254,7 +2254,7 @@ export async function listStores({ search = '', status = 'all', page = 1, pageSi
   });
 }
 
-export async function listAdminStaff({ search = '', role = 'all', page = 1, pageSize = 10 } = {}) {
+export async function listAdminStaff({ search = '', role = 'all', page = 1, pageSize = 10, user = {} } = {}) {
   await initializeDatabase();
   const deleteFilter = buildDeleteStatusFilter(role, 'admin_staff.delete_status');
   const queryData = buildListQuery({
@@ -2269,6 +2269,8 @@ export async function listAdminStaff({ search = '', role = 'all', page = 1, page
         admin_staff.phone,
         admin_staff.email,
         admin_staff.last_login,
+        admin_staff.company_id,
+        admin_staff.store_id,
         admin_staff.role_id,
         roles.role_name
       FROM admin_staff
@@ -2287,6 +2289,7 @@ export async function listAdminStaff({ search = '', role = 'all', page = 1, page
       `${sql.includes(' WHERE ') ? ' AND ' : ' WHERE '}${deleteFilter.condition} ORDER BY admin_staff.updated_at DESC, admin_staff.id DESC`
     );
   }
+  sql = appendCompanyDataScope(sql, queryData.params, user, 'admin_staff.company_id');
   return executePaginatedQuery({
     sql,
     params: queryData.params,
@@ -2299,6 +2302,8 @@ export async function listAdminStaff({ search = '', role = 'all', page = 1, page
       department: row.department,
       role_id: String(row.role_id),
       role_name: row.role_name,
+      company_id: row.company_id ? String(row.company_id) : 'none',
+      store_id: row.store_id ? String(row.store_id) : 'none',
       status: row.status,
       phone: row.phone,
       email: row.email,
@@ -3688,8 +3693,9 @@ export async function getStaffDetail(id) {
   };
 }
 
-export async function updateStaffOrganization(id, payload, actorName = '后台用户') {
+export async function updateStaffOrganization(id, payload, actorName = '后台用户', user = {}) {
   await initializeDatabase();
+  const organization = await resolveStaffOrganizationInput(payload, user);
   await query(
     `
       UPDATE admin_staff
@@ -3697,8 +3703,8 @@ export async function updateStaffOrganization(id, payload, actorName = '后台�
       WHERE id = $5
     `,
     [
-      payload.company_id && payload.company_id !== 'none' ? Number(payload.company_id) : null,
-      payload.store_id && payload.store_id !== 'none' ? Number(payload.store_id) : null,
+      organization.company_id,
+      organization.store_id,
       actorName,
       now(),
       Number(id)
@@ -4011,13 +4017,14 @@ export async function getStoreOptions(companyId, user = {}) {
 
   const rows = (
     await query(
-      `SELECT id, name, code FROM company_stores WHERE ${where.join(' AND ')} ORDER BY id ASC`,
+      `SELECT id, company_id, name, code FROM company_stores WHERE ${where.join(' AND ')} ORDER BY company_id ASC, id ASC`,
       params
     )
   ).rows;
   return rows.map((row) => ({
     value: String(row.id),
-    label: `${row.name} (${row.code})`
+    label: `${row.name} (${row.code})`,
+    companyId: String(row.company_id)
   }));
 }
 
@@ -4167,12 +4174,15 @@ export async function getStoreStats(user = {}) {
   };
 }
 
-export async function getStaffStats() {
+export async function getStaffStats(user = {}) {
   await initializeDatabase();
+  const scope = canAccessAllCompanies(user) ? { clause: '', values: [] } : { clause: ' WHERE company_id = $1', values: [getUserCompanyId(user) ?? -1] };
+  const activeClause = scope.clause ? `${scope.clause} AND status = '在职'` : ` WHERE status = '在职'`;
+  const pendingClause = scope.clause ? `${scope.clause} AND status = '试用中'` : ` WHERE status = '试用中'`;
   return {
-    total: await getCount('SELECT COUNT(*)::int AS count FROM admin_staff'),
-    active: await getCount(`SELECT COUNT(*)::int AS count FROM admin_staff WHERE status = '在职'`),
-    pending: await getCount(`SELECT COUNT(*)::int AS count FROM admin_staff WHERE status = '试用中'`)
+    total: await getCount(`SELECT COUNT(*)::int AS count FROM admin_staff${scope.clause}`, scope.values),
+    active: await getCount(`SELECT COUNT(*)::int AS count FROM admin_staff${activeClause}`, scope.values),
+    pending: await getCount(`SELECT COUNT(*)::int AS count FROM admin_staff${pendingClause}`, scope.values)
   };
 }
 
@@ -4793,11 +4803,45 @@ function normalizeStaffInput(input) {
     input.password ?? '',
     input.department ?? '未分配',
     Number(input.role_id),
+    input.company_id && input.company_id !== 'none' ? Number(input.company_id) : null,
+    input.store_id && input.store_id !== 'none' ? Number(input.store_id) : null,
     input.status,
     input.phone,
     input.email,
     input.last_login ?? '从未登录'
   ];
+}
+
+async function resolveStaffOrganizationInput(input, user = {}) {
+  const companyId = input.company_id && input.company_id !== 'none' ? Number(input.company_id) : null;
+  const storeId = input.store_id && input.store_id !== 'none' ? Number(input.store_id) : null;
+
+  if (companyId) {
+    assertCanAccessCompany(user, companyId);
+  }
+
+  if (storeId && !companyId) {
+    throw new Error('选择门店时必须先选择所属分公司');
+  }
+
+  if (storeId) {
+    const store = (
+      await query(
+        `SELECT id, company_id FROM company_stores WHERE id = $1 AND delete_status = '正常'`,
+        [storeId]
+      )
+    ).rows[0];
+
+    if (!store) {
+      throw new Error('所选门店不存在或已删除');
+    }
+
+    if (Number(store.company_id) !== Number(companyId)) {
+      throw new Error('所选门店不属于当前分公司');
+    }
+  }
+
+  return { company_id: companyId, store_id: storeId };
 }
 
 function normalizeMemberInput(input) {
@@ -8490,10 +8534,10 @@ const entityConfigs = {
     list: listAdminStaff,
     table: 'admin_staff',
     insertColumns:
-      '(name, account, password, department, role_id, status, phone, email, last_login, created_at, updated_at)',
-    insertPlaceholders: '($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)',
+      '(name, account, password, department, role_id, company_id, store_id, status, phone, email, last_login, created_at, updated_at)',
+    insertPlaceholders: '($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)',
     updateSet:
-      'name = $1, account = $2, password = $3, department = $4, role_id = $5, status = $6, phone = $7, email = $8, last_login = $9, updated_at = $10',
+      'name = $1, account = $2, password = $3, department = $4, role_id = $5, company_id = $6, store_id = $7, status = $8, phone = $9, email = $10, last_login = $11, updated_at = $12',
     normalize: normalizeStaffInput
   },
   members: {
@@ -8581,9 +8625,11 @@ export async function createRecord(entity, payload, actorName = '后台用户', 
         if (!isMainlandMobile(phone)) {
           throw new Error('请填写 11 位员工手机号，员工将使用该手机号 + 短信验证码登录');
         }
+        const organization = await resolveStaffOrganizationInput(payload, user);
         // 验证码登录：不再下发密码，仅为 NOT NULL 约束生成一个不可用的随机密码占位。
         normalizedPayload = {
           ...payload,
+          ...organization,
           phone,
           department: await inferStaffDepartmentByRoleId(payload.role_id),
           password: await hashPassword(generateAccountPassword()),
@@ -8646,8 +8692,10 @@ export async function updateRecord(entity, id, payload, actorName = '后台用�
         if (!isMainlandMobile(phone)) {
           throw new Error('请填写 11 位员工手机号，员工将使用该手机号 + 短信验证码登录');
         }
+        const organization = await resolveStaffOrganizationInput(payload, user);
         nextPayload = {
           ...payload,
+          ...organization,
           phone,
           department: await inferStaffDepartmentByRoleId(payload.role_id),
           password:

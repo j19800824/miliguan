@@ -27,8 +27,8 @@ export default async function StaffDetailPage({
     );
   }
 
-  const companyOptions = await getCompanyOptions();
-  const storeOptions = await getStoreOptions(staff.company_id || 'all');
+  const companyOptions = await getCompanyOptions(user);
+  const storeOptions = await getStoreOptions('all', user);
 
   return (
     <PageContainer pageTitle={`${staff.name} / 员工详情`} pageDescription='查看员工角色、组织关系、门店绑定和销售归属配置。'>

@@ -12,6 +12,7 @@ export type FilterOption = {
 export type SelectOption = {
   label: string;
   value: string;
+  companyId?: string;
   code?: string;
   availableOrderQuota?: number;
   skuCode?: string;
@@ -166,7 +167,11 @@ export const membersConfig: ManagementConfig = {
   ]
 };
 
-export function createStaffConfig(roleOptions: SelectOption[]): ManagementConfig {
+export function createStaffConfig(
+  roleOptions: SelectOption[],
+  companyOptions: SelectOption[] = [],
+  storeOptions: SelectOption[] = []
+): ManagementConfig {
   return {
     entity: 'staff',
     title: '后台员工管理',
@@ -195,6 +200,20 @@ export function createStaffConfig(roleOptions: SelectOption[]): ManagementConfig
       { name: 'name', label: '姓名', type: 'text', required: true },
       { name: 'account', label: '登录账号', type: 'text', required: true },
       { name: 'role_id', label: '岗位角色', type: 'select', required: true, options: roleOptions },
+      {
+        name: 'company_id',
+        label: '所属分公司',
+        type: 'select',
+        options: [{ label: '未绑定分公司', value: 'none' }, ...companyOptions],
+        defaultValue: 'none'
+      },
+      {
+        name: 'store_id',
+        label: '所属门店',
+        type: 'select',
+        options: [{ label: '未绑定门店', value: 'none' }, ...storeOptions],
+        defaultValue: 'none'
+      },
       {
         name: 'status',
         label: '状态',

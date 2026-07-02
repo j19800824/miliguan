@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-type Option = { value: string; label: string };
+type Option = { value: string; label: string; companyId?: string };
 
 export function StaffOrganizationActions({
   staffId,
@@ -27,6 +27,17 @@ export function StaffOrganizationActions({
   const [companyId, setCompanyId] = useState(initialCompanyId || 'none');
   const [storeId, setStoreId] = useState(initialStoreId || 'none');
   const [loading, setLoading] = useState(false);
+  const filteredStoreOptions = useMemo(() => {
+    if (!companyId || companyId === 'none') return [];
+    return storeOptions.filter((option) => option.companyId === companyId);
+  }, [companyId, storeOptions]);
+
+  useEffect(() => {
+    if (storeId === 'none') return;
+    if (!filteredStoreOptions.some((option) => option.value === storeId)) {
+      setStoreId('none');
+    }
+  }, [filteredStoreOptions, storeId]);
 
   const save = async () => {
     setLoading(true);
@@ -51,7 +62,14 @@ export function StaffOrganizationActions({
     <div className='space-y-4'>
       <div className='grid gap-2'>
         <div className='text-sm font-medium'>所属分公司</div>
-        <Select value={companyId} onValueChange={setCompanyId} disabled={!canEdit}>
+        <Select
+          value={companyId}
+          onValueChange={(value) => {
+            setCompanyId(value);
+            setStoreId('none');
+          }}
+          disabled={!canEdit}
+        >
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value='none'>未绑定</SelectItem>
@@ -63,11 +81,11 @@ export function StaffOrganizationActions({
       </div>
       <div className='grid gap-2'>
         <div className='text-sm font-medium'>所属门店</div>
-        <Select value={storeId} onValueChange={setStoreId} disabled={!canEdit}>
+        <Select value={storeId} onValueChange={setStoreId} disabled={!canEdit || companyId === 'none'}>
           <SelectTrigger><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value='none'>未绑定</SelectItem>
-            {storeOptions.map((option) => (
+            {filteredStoreOptions.map((option) => (
               <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
             ))}
           </SelectContent>
